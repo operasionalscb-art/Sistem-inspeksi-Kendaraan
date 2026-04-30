@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-zinc-950: #09090b;
+  --color-zinc-900: #18181b;
+  --color-zinc-800: #27272a;
+  --color-zinc-700: #3f3f46;
+  --color-amber-500: #f59e0b;
+  --color-amber-400: #fbbf24;
+}
+
+@layer base {
+  body {
+    @apply bg-zinc-950 text-zinc-100 antialiased font-sans;
+  }
+}
+
+@layer components {
+  .bento-card {
+    @apply bg-zinc-900 border-2 border-zinc-800 rounded-[32px] p-6 transition-all;
+  }
+  
+  .btn-primary {
+    @apply bg-amber-500 text-zinc-950 px-6 py-3 rounded-2xl font-bold hover:bg-amber-400 transition-colors shadow-lg shadow-amber-500/10 active:scale-95 disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply bg-zinc-800 text-white px-6 py-3 rounded-2xl font-bold hover:bg-zinc-700 transition-colors active:scale-95;
+  }
+}
+

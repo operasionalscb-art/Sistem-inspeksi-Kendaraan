@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Kendaraan yang akan diinspeksi",
+      "type": "object",
+      "properties": {
+        "plateNumber": { "type": "string" },
+        "model": { "type": "string" },
+        "brand": { "type": "string" },
+        "lastOdometer": { "type": "number" }
+      },
+      "required": ["plateNumber", "model", "brand", "lastOdometer"]
+    },
+    "InspectionItem": {
+      "title": "Inspection Item",
+      "description": "Item individu dalam inspeksi",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "status": { "type": "string", "enum": ["ok", "issue", "n/a"] },
+        "comment": { "type": "string" }
+      },
+      "required": ["id", "label", "status"]
+    },
+    "Report": {
+      "title": "Inspection Report",
+      "description": "Laporan hasil inspeksi kendaraan",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "type": { "type": "string", "enum": ["harian", "mingguan", "bulanan"] },
+        "date": { "type": "string", "format": "date-time" },
+        "items": { "type": "array", "items": { "$ref": "#/entities/InspectionItem" } },
+        "odometer": { "type": "number" },
+        "signature": { "type": "string" },
+        "summary": { "type": "string" }
+      },
+      "required": ["userId", "vehicleId", "type", "date", "items", "odometer"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Pesan notifikasi untuk driver",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["info", "warning", "success"] },
+        "date": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["userId", "title", "message", "type", "date", "read"]
+    }
+  },
+  "firestore": {
+    "/vehicles/{vehicleId}": {
+      "schema": "Vehicle",
+      "description": "Koleksi data kendaraan"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Koleksi laporan inspeksi"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Koleksi notifikasi per user"
+    }
+  }
+}
