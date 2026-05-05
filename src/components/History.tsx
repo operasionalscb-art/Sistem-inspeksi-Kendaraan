@@ -4,9 +4,10 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Truck, Calendar, ChevronRight, FileText, Search, Filter } from 'lucide-react';
-import { db, auth, handleFirestoreError } from '../lib/firebase';
+import { Truck, Calendar, ChevronRight, FileText, Search, Download } from 'lucide-react';
+import { db, auth } from '../lib/firebase';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import * as XLSX from 'xlsx';
 
 export default function History() {
   const [reports, setReports] = useState<any[]>([]);
@@ -36,6 +37,36 @@ export default function History() {
     return unsubscribe;
   }, []);
 
+  const handleExport = () => {
+    if (reports.length === 0) return;
+
+    const exportData = reports.map(report => {
+      const data: any = {
+        'Tanggal': new Date(report.date).toLocaleString('id-ID'),
+        'Unit': report.vehicleId,
+        'Tipe': report.type.toUpperCase(),
+        'Odometer': report.odometer,
+        'Status': report.items.every((i: any) => i.status === 'ok') ? 'SUCCESS' : 'ISSUES',
+        'Catatan': report.summary || ''
+      };
+      
+      // Add checklist items as dynamic columns
+      report.items.forEach((item: any) => {
+        data[item.label] = item.status.toUpperCase();
+      });
+      
+      return data;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Inspeksi");
+    
+    // Generate file name with current date
+    const fileName = `Laporan_Inspeksi_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-4 mb-8">
@@ -47,6 +78,14 @@ export default function History() {
               className="w-full bg-zinc-900 border-2 border-zinc-800 text-white rounded-[24px] py-4 pl-14 pr-6 outline-none focus:border-amber-500/50 transition-all font-black uppercase italic text-xs tracking-widest placeholder:text-zinc-800"
             />
          </div>
+         <button 
+           onClick={handleExport}
+           className="btn-primary w-full sm:w-auto flex items-center justify-center gap-2 italic"
+           disabled={reports.length === 0}
+         >
+            <Download className="w-5 h-5" />
+            EXPORT EXCEL
+         </button>
       </div>
 
       <div className="space-y-3">
