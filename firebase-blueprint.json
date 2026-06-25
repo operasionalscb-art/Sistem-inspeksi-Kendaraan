@@ -53,6 +53,30 @@
         "read": { "type": "boolean" }
       },
       "required": ["userId", "title", "message", "type", "date", "read"]
+    },
+    "RepairTask": {
+      "title": "Repair Task",
+      "description": "Log tindak lanjut perbaikan atau perawatan berkala",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "reportId": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "itemLabel": { "type": "string" },
+        "originalComment": { "type": "string" },
+        "originalPhoto": { "type": "string" },
+        "dateCreated": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "in_progress", "resolved"] },
+        "repairCost": { "type": "number" },
+        "repairDate": { "type": "string" },
+        "mechanicName": { "type": "string" },
+        "repairNotes": { "type": "string" },
+        "resolvedPhoto": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "isRoutine": { "type": "boolean" }
+      },
+      "required": ["id", "vehicleId", "itemLabel", "dateCreated", "status"]
     }
   },
   "firestore": {
@@ -67,6 +91,10 @@
     "/notifications/{notificationId}": {
       "schema": "Notification",
       "description": "Koleksi notifikasi per user"
+    },
+    "/repairs/{repairId}": {
+      "schema": "RepairTask",
+      "description": "Koleksi data tindak lanjut perbaikan dan servis rutin"
     }
   }
 }

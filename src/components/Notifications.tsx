@@ -41,7 +41,7 @@ export default function Notifications() {
   return (
     <div className="space-y-4 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-8">
-         <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest underline cursor-pointer hover:text-amber-400">Mark all as read</p>
+         <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest underline cursor-pointer hover:text-amber-400">Tandai semua telah dibaca</p>
          <button className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center hover:bg-zinc-800">
             <Trash2 className="w-4 h-4 text-zinc-600 hover:text-red-500" />
          </button>
@@ -90,7 +90,7 @@ export default function Notifications() {
       {!loading && alerts.length === 0 && (
         <div className="text-center py-24 bento-card bg-zinc-950/20 border-dashed">
            <Bell className="w-20 h-20 text-zinc-900 mx-auto mb-6" />
-           <p className="text-zinc-700 font-black uppercase tracking-[0.3em]">No Notifications</p>
+           <p className="text-zinc-700 font-black uppercase tracking-[0.3em]">Tidak Ada Notifikasi</p>
         </div>
       )}
     </div>

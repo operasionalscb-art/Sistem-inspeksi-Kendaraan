@@ -29,7 +29,10 @@ import {
   Check,
   Activity,
   Eye,
-  Phone
+  Phone,
+  Wrench,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './FirebaseProvider';
@@ -70,6 +73,23 @@ interface LayoutProps {
 export default function Layout({ children, activeTab, setActiveTab }: LayoutProps) {
   const { user, role, loginWithEmail, registerWithEmail, loginWithGoogle, logout } = useAuth();
   const isGuest = user?.isAnonymous || !user;
+  
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved) return saved === 'dark';
+    return true; // default is dark mode
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.remove('light');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.add('light');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [newDriverName, setNewDriverName] = useState('');
@@ -100,11 +120,12 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
   const [isAddingDriver, setIsAddingDriver] = useState(false);
 
   const tabs = [
-    { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
-    { id: 'inspect', label: 'Inspect', icon: ClipboardCheck },
-    { id: 'history', label: 'History', icon: History },
-    { id: 'notifications', label: 'Alerts', icon: Bell },
-    { id: 'vehicles', label: 'Fleet', icon: Truck },
+    { id: 'dashboard', label: 'Beranda', icon: LayoutDashboard },
+    ...(!isGuest ? [{ id: 'inspect', label: 'Inspeksi', icon: ClipboardCheck }] : []),
+    { id: 'history', label: 'Riwayat', icon: History },
+    { id: 'notifications', label: 'Notifikasi', icon: Bell },
+    { id: 'vehicles', label: 'Armada', icon: Truck },
+    ...(!isGuest ? [{ id: 'repairs', label: 'Pemeliharaan', icon: Wrench }] : []),
   ];
 
   // Load drivers when account manager modal is open and user is Super Admin
@@ -320,10 +341,24 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
       <main className="flex-1 md:ml-64 pb-24 md:pb-0">
         <header className="bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800 h-20 flex items-center justify-between px-8 sticky top-0 z-30">
           <div className="flex flex-col">
-            <h1 className="text-sm font-black uppercase tracking-[0.2em] text-zinc-500">{activeTab}</h1>
+            <h1 className="text-sm font-black uppercase tracking-[0.2em] text-zinc-500">
+              {activeTab === 'dashboard' ? 'Beranda' :
+               activeTab === 'inspect' ? 'Inspeksi' :
+               activeTab === 'history' ? 'Riwayat' :
+               activeTab === 'notifications' ? 'Notifikasi' :
+               activeTab === 'vehicles' ? 'Armada' :
+               activeTab === 'repairs' ? 'Pemeliharaan' : activeTab}
+            </h1>
             <p className="text-[10px] text-zinc-600 italic">V-CHECK SYSTEM V2.4</p>
           </div>
           <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-amber-500/30 transition-all"
+              title={isDarkMode ? "Mode Terang" : "Mode Gelap"}
+            >
+              {isDarkMode ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5 text-indigo-500" />}
+            </button>
             <button className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 relative">
               <Bell className="w-5 h-5" />
               <span className="absolute top-2 right-2 w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>

@@ -47,7 +47,7 @@ export default function History() {
         'Unit': report.vehicleId,
         'Tipe': report.type.toUpperCase(),
         'Odometer': report.odometer,
-        'Status': report.items.every((i: any) => i.status === 'ok') ? 'SUCCESS' : 'ISSUES',
+        'Status': report.items.every((i: any) => i.status === 'ok') ? 'AMAN' : 'TEMUAN',
         'Catatan': report.summary || ''
       };
       
@@ -124,7 +124,7 @@ export default function History() {
                   <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase border ${
                     report.items?.every((i: any) => i.status === 'ok') ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'
                   }`}>
-                    {report.items?.every((i: any) => i.status === 'ok') ? 'SUCCESS' : 'ISSUES'}
+                    {report.items?.every((i: any) => i.status === 'ok') ? 'AMAN' : 'TEMUAN'}
                   </span>
                 </div>
                 <div className="flex items-center gap-4 text-[10px] font-mono text-zinc-600 mt-1 uppercase">
@@ -153,7 +153,7 @@ export default function History() {
         {!loading && filteredReports.length === 0 && (
           <div className="text-center py-24 bento-card bg-zinc-950/20 border-dashed">
              <FileText className="w-20 h-20 text-zinc-900 mx-auto mb-6" />
-             <p className="text-zinc-700 font-black uppercase tracking-[0.3em]">No Logs Available</p>
+             <p className="text-zinc-700 font-black uppercase tracking-[0.3em]">Tidak Ada Laporan Tersedia</p>
           </div>
         )}
       </div>
@@ -239,7 +239,7 @@ export default function History() {
                               ? 'bg-red-500/10 text-red-500 border-red-500/20' 
                               : 'bg-zinc-800 text-zinc-400 border-zinc-700'
                           }`}>
-                            {item.status === 'ok' ? 'PASSED' : item.status === 'issue' ? 'ISSUE' : 'N/A'}
+                            {item.status === 'ok' ? 'BAIK' : item.status === 'issue' ? 'ADA MASALAH' : 'N/A'}
                           </span>
                         </div>
 
@@ -301,7 +301,7 @@ export default function History() {
                   <div className="space-y-2 flex flex-col items-start sm:items-end">
                     <span className="text-[9px] font-black text-zinc-500 uppercase tracking-wider block font-mono">TANDA TANGAN DRIVER</span>
                     <div className="w-32 h-16 bg-zinc-950 rounded-xl border border-zinc-800 flex items-center justify-center p-2">
-                      <span className="text-[8px] font-black uppercase text-zinc-700 tracking-widest italic font-mono">SECURED E-SIGN</span>
+                      <span className="text-[8px] font-black uppercase text-zinc-700 tracking-widest italic font-mono">E-TANDA TANGAN</span>
                     </div>
                   </div>
                 </div>

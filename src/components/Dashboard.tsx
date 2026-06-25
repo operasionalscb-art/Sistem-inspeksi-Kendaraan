@@ -23,6 +23,7 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
   const { user } = useAuth();
   const [vehicles, setVehicles] = React.useState<any[]>([]);
   const [reports, setReports] = React.useState<any[]>([]);
+  const [repairs, setRepairs] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
@@ -39,9 +40,16 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
       setLoading(false);
     });
 
+    const qRep = query(collection(db, 'repairs'));
+    const unsubscribeRep = onSnapshot(qRep, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setRepairs(docs);
+    });
+
     return () => {
       unsubscribeV();
       unsubscribeR();
+      unsubscribeRep();
     };
   }, []);
 
@@ -49,8 +57,33 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
 
   // Calculate dynamic statistics
   const totalReports = reports.length;
-  const reportsWithIssues = reports.filter(r => r.items?.some((item: any) => item.status === 'issue'));
-  const activeIssuesCount = reportsWithIssues.length;
+  
+  // Find all individual issues in reports
+  const reportIssuesKeys = new Set<string>();
+  reports.forEach(report => {
+    (report.items || []).forEach((item: any) => {
+      if (item.status === 'issue') {
+        reportIssuesKeys.add(`${report.id}_${item.id}`);
+      }
+    });
+  });
+
+  // Filter those that are registered as resolved in repairs collection
+  const resolvedRepairsKeys = new Set(
+    repairs.filter(r => r.status === 'resolved').map(r => r.id)
+  );
+
+  let activeIssuesCount = 0;
+  reportIssuesKeys.forEach(key => {
+    if (!resolvedRepairsKeys.has(key)) {
+      activeIssuesCount++;
+    }
+  });
+
+  const unresolvedReports = reports.filter(r => (r.items || []).some((item: any) => {
+    const key = `${r.id}_${item.id}`;
+    return item.status === 'issue' && !resolvedRepairsKeys.has(key);
+  })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   // Sorted reports for recent logs
   const sortedReports = [...reports].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -144,7 +177,7 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
           O
         </div>
         <div>
-          <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic">Dashboard</h2>
+          <h2 className="text-3xl font-black tracking-tighter text-zinc-100 uppercase italic">Dashboard</h2>
           <p className="text-zinc-500 font-mono text-xs">Operator SCB • Sistem Inspeksi Armada</p>
         </div>
       </div>
@@ -161,37 +194,37 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
         <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:opacity-[0.07] transition-opacity">
            <Truck className="w-64 h-64 -rotate-12 translate-x-12 translate-y-12" />
         </div>
-        
-        <div className="relative z-10">
+                <div className="relative z-10">
           <div className="flex justify-between items-start mb-6">
-            <span className="px-3 py-1 bg-amber-500/10 text-amber-500 text-[10px] font-black uppercase rounded-full border border-amber-500/20 tracking-widest">Active Unit</span>
+            <span className="px-3 py-1 bg-amber-500/10 text-amber-500 text-[10px] font-black uppercase rounded-full border border-amber-500/20 tracking-widest">Unit Aktif</span>
             <p className="text-zinc-500 text-[10px] italic font-mono uppercase">
               Update Terakhir: {sortedReports[0] ? new Date(sortedReports[0].date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '07:45'}
             </p>
           </div>
-          <h2 className="text-5xl font-black text-white tracking-tighter mb-2 italic">{currentVehicle.plateNumber}</h2>
+          <h2 className="text-5xl font-black text-zinc-100 tracking-tighter mb-2 italic">{currentVehicle.plateNumber}</h2>
           {vehicles.length > 0 ? (
             <p className="text-zinc-400 font-bold uppercase tracking-widest text-sm">{currentVehicle.brand} {currentVehicle.model}</p>
           ) : (
-            <p className="text-amber-500 font-black uppercase tracking-widest text-sm animate-pulse">TAMBAH UNIT DI MENU FLEET</p>
+            <p className="text-amber-500 font-black uppercase tracking-widest text-sm animate-pulse">TAMBAH UNIT DI MENU ARMADA</p>
           )}
         </div>
 
         <div className="flex flex-col gap-2 mt-8 relative z-10">
           <button 
-            onClick={onStartInspect}
+            onClick={user?.isAnonymous ? undefined : onStartInspect}
+            disabled={user?.isAnonymous}
             className={`py-5 flex-1 flex items-center justify-center gap-3 text-lg italic transition-all duration-300 ${
               user?.isAnonymous
-                ? 'bg-zinc-800/80 hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 border border-zinc-700/50 rounded-[20px] font-bold cursor-pointer'
+                ? 'bg-zinc-900/80 text-zinc-600 border border-zinc-800/60 rounded-[20px] font-bold cursor-not-allowed'
                 : 'btn-primary'
             }`}
           >
-            {user?.isAnonymous ? <Lock className="w-6 h-6 text-zinc-500" /> : <Activity className="w-6 h-6" />}
-            {user?.isAnonymous ? 'MULAI INSPEKSI (AKSES TAMU)' : 'MULAI INSPEKSI BARU'}
+            {user?.isAnonymous ? <Lock className="w-6 h-6 text-zinc-600" /> : <Activity className="w-6 h-6" />}
+            {user?.isAnonymous ? 'MULAI INSPEKSI (AKSES DITOLAK)' : 'MULAI INSPEKSI BARU'}
           </button>
           {user?.isAnonymous && (
-            <p className="text-[10px] text-zinc-500 font-mono text-center uppercase tracking-wider italic">
-              * Anda masuk sebagai tamu. Formulir inspeksi dikunci (Read-Only).
+            <p className="text-[10px] text-red-500 font-mono text-center uppercase tracking-wider italic font-bold">
+              * Tamu tidak diberikan akses untuk mengisi atau mengirimkan formulir inspeksi baru.
             </p>
           )}
         </div>
@@ -217,7 +250,7 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
            </div>
            <div>
               <p className="text-3xl font-black text-white tracking-tighter italic uppercase">
-                {activeIssuesCount > 0 ? 'Attention' : 'Ready'}
+                {activeIssuesCount > 0 ? 'Perhatian' : 'Siap'}
               </p>
               <p className="text-xs text-zinc-600 font-bold uppercase italic">
                 {activeIssuesCount > 0 ? `${activeIssuesCount} Temuan Isu` : 'Laik Operasi'}
@@ -234,7 +267,7 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
               <BarChart3 className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-black text-white uppercase tracking-tight italic">Tren Frekuensi Inspeksi</h3>
+              <h3 className="text-base font-black text-zinc-100 uppercase tracking-tight italic">Tren Frekuensi Inspeksi</h3>
               <p className="text-[10px] text-zinc-500 font-mono">DURABLE CLOUD SYNCHRONIZED ANALYTICS (10 HARI TERAKHIR)</p>
             </div>
           </div>
@@ -316,8 +349,8 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
           <Calendar className="text-amber-500 w-6 h-6" />
         </div>
         <div>
-          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Next Schedule</p>
-          <p className="text-xl font-black text-white italic">HARI INI</p>
+          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Jadwal Berikutnya</p>
+          <p className="text-xl font-black text-zinc-100 italic">HARI INI</p>
           <p className="text-[9px] text-amber-500/60 font-black uppercase tracking-tighter">Pemeriksaan Harian Rutin</p>
         </div>
       </div>
@@ -328,9 +361,9 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
         </div>
         <div>
           <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Temuan Masalah</p>
-          <p className="text-xl font-black text-white">{activeIssuesCount} TEMUAN</p>
+          <p className="text-xl font-black text-zinc-100">{activeIssuesCount} TEMUAN</p>
           <p className="text-[9px] text-zinc-600 font-bold font-mono">
-            {reportsWithIssues[0] ? `Terakhir: ${new Date(reportsWithIssues[0].date).toLocaleDateString('id-ID')}` : 'Tidak ada temuan'}
+            {unresolvedReports[0] ? `Terakhir: ${new Date(unresolvedReports[0].date).toLocaleDateString('id-ID')}` : 'Tidak ada temuan'}
           </p>
         </div>
       </div>
@@ -341,7 +374,7 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
         </div>
         <div>
           <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Total Laporan</p>
-          <p className="text-xl font-black text-white tracking-widest">{totalReports} <span className="text-sm">LAPORAN</span></p>
+          <p className="text-xl font-black text-zinc-100 tracking-widest">{totalReports} <span className="text-sm">LAPORAN</span></p>
         </div>
       </div>
 
