@@ -8,8 +8,10 @@ import { Truck, Plus, Search, Edit2, Trash2, X, Save } from 'lucide-react';
 import { auth, db, handleFirestoreError } from '../lib/firebase';
 import { collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, where } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAuth } from './FirebaseProvider';
 
 export default function Vehicles() {
+  const { role } = useAuth();
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,21 +45,30 @@ export default function Vehicles() {
       };
       if (editingVehicle) {
         await updateDoc(doc(db, 'vehicles', editingVehicle.id), dataWithUser);
+        alert('Data unit armada berhasil diperbarui.');
       } else {
         await addDoc(collection(db, 'vehicles'), dataWithUser);
+        alert('Data unit armada baru berhasil ditambahkan.');
       }
       closeModal();
-    } catch (error) {
-      handleFirestoreError(error, editingVehicle ? 'update' : 'create', editingVehicle ? `vehicles/${editingVehicle.id}` : 'vehicles');
+    } catch (error: any) {
+      console.error('Failed to save vehicle:', error);
+      alert('Gagal menyimpan data unit armada: ' + (error.message || error));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Hapus kendaraan ini?')) {
+    if (role !== 'super_admin') {
+      alert('Hanya Super Admin yang diizinkan untuk menghapus data unit armada.');
+      return;
+    }
+    if (confirm('Apakah Anda yakin ingin menghapus data unit armada ini?')) {
       try {
         await deleteDoc(doc(db, 'vehicles', id));
-      } catch (error) {
-        handleFirestoreError(error, 'delete', `vehicles/${id}`);
+        alert('Data unit armada berhasil dihapus.');
+      } catch (error: any) {
+        console.error('Failed to delete vehicle:', error);
+        alert('Gagal menghapus data unit armada: ' + (error.message || error));
       }
     }
   };
@@ -95,13 +106,15 @@ export default function Vehicles() {
               className="w-full bg-zinc-900 border-2 border-zinc-800 text-white rounded-[24px] py-4 pl-14 pr-6 outline-none focus:border-amber-500/50 transition-all font-black uppercase italic text-xs tracking-widest placeholder:text-zinc-800"
             />
          </div>
-         <button 
-           onClick={() => openModal()}
-           className="btn-primary w-full sm:w-auto flex items-center justify-center gap-2 italic"
-         >
-            <Plus className="w-5 h-5" />
-            TAMBAH UNIT
-         </button>
+         {role === 'super_admin' && (
+           <button 
+             onClick={() => openModal()}
+             className="btn-primary w-full sm:w-auto flex items-center justify-center gap-2 italic"
+           >
+              <Plus className="w-5 h-5" />
+              TAMBAH UNIT
+           </button>
+         )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -116,14 +129,16 @@ export default function Vehicles() {
                   <h3 className="text-2xl font-black text-white italic tracking-tighter uppercase">{vehicle.plateNumber}</h3>
                   <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{vehicle.brand} {vehicle.model}</p>
                </div>
-               <div className="bg-zinc-950 p-2 rounded-xl flex gap-2">
-                  <button onClick={() => openModal(vehicle)} className="p-2 text-zinc-500 hover:text-amber-500 transition-colors">
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => handleDelete(vehicle.id)} className="p-2 text-zinc-500 hover:text-red-500 transition-colors">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-               </div>
+               {role === 'super_admin' && (
+                 <div className="bg-zinc-950 p-2 rounded-xl flex gap-2">
+                    <button onClick={() => openModal(vehicle)} className="p-2 text-zinc-500 hover:text-amber-500 transition-colors" title="Edit Unit">
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDelete(vehicle.id)} className="p-2 text-zinc-500 hover:text-red-500 transition-colors" title="Hapus Unit">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                 </div>
+               )}
             </div>
             
             <div className="border-t border-zinc-800 pt-4 flex justify-between items-center">

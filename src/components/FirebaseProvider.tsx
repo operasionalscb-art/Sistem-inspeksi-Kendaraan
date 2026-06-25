@@ -69,10 +69,13 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         }
       ];
 
-      for (const vehicle of initialVehicles) {
-        const docRef = doc(db, 'vehicles', vehicle.id);
-        const { id, ...vehicleData } = vehicle;
-        await setDoc(docRef, vehicleData, { merge: true });
+      const vehiclesSnap = await getDocs(collection(db, 'vehicles'));
+      if (vehiclesSnap.empty) {
+        for (const vehicle of initialVehicles) {
+          const docRef = doc(db, 'vehicles', vehicle.id);
+          const { id, ...vehicleData } = vehicle;
+          await setDoc(docRef, vehicleData, { merge: true });
+        }
       }
 
       // Check if reports are empty, and if so, seed historical inspection trends

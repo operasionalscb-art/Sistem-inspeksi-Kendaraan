@@ -16,7 +16,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     // --- Entity Validations ---
@@ -62,7 +62,7 @@ service cloud.firestore {
       allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidVehicle(request.resource.data);
       allow update: if isSignedIn() && isValidId(vehicleId) && (
-        (isValidVehicle(request.resource.data) && request.resource.data.userId == resource.data.userId) ||
+        isValidVehicle(request.resource.data) ||
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastOdometer']) && request.resource.data.lastOdometer is number)
       );
       allow delete: if isSignedIn() && isValidId(vehicleId);
