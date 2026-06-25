@@ -11,7 +11,6 @@ import History from './components/History';
 import Notifications from './components/Notifications';
 import Vehicles from './components/Vehicles';
 import { FirebaseProvider, useAuth } from './components/FirebaseProvider';
-import Login from './components/Login';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -20,14 +19,10 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+        <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
-  }
-
-  if (!user) {
-    return <Login />;
   }
 
   const renderContent = () => {

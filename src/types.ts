@@ -10,6 +10,7 @@ export interface InspectionItem {
   label: string;
   status: 'ok' | 'issue' | 'n/a';
   comment?: string;
+  photo?: string; // Base64 image data of the vehicle issue
 }
 
 export interface InspectionReport {

@@ -23,8 +23,7 @@ export default function Vehicles() {
   });
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const q = query(collection(db, 'vehicles'), where('userId', '==', auth.currentUser.uid));
+    const q = query(collection(db, 'vehicles'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setVehicles(docs);
@@ -40,7 +39,7 @@ export default function Vehicles() {
     try {
       const dataWithUser = {
         ...formData,
-        userId: auth.currentUser?.uid || ''
+        userId: auth.currentUser?.uid || 'shared'
       };
       if (editingVehicle) {
         await updateDoc(doc(db, 'vehicles', editingVehicle.id), dataWithUser);

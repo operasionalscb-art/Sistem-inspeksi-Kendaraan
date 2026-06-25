@@ -13,11 +13,8 @@ export default function Notifications() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-
     const q = query(
       collection(db, 'notifications'),
-      where('userId', '==', auth.currentUser.uid),
       orderBy('date', 'desc')
     );
 

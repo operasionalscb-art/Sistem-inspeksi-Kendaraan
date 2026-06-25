@@ -6,10 +6,11 @@
 import React, { useState } from 'react';
 import { InspectionType, InspectionItem } from '../types';
 import { INSPECTION_TEMPLATES, VEHICLES } from '../constants';
-import { CheckCircle2, AlertCircle, HelpCircle, Save, ArrowLeft, Camera, User, ChevronRight, Truck, Car } from 'lucide-react';
+import { CheckCircle2, AlertCircle, HelpCircle, Save, ArrowLeft, Camera, User, ChevronRight, Truck, Car, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db, handleFirestoreError } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, query, updateDoc, doc, where } from 'firebase/firestore';
+import CameraCapture from './CameraCapture';
 
 export default function Inspect({ onCancel }: { onCancel: () => void }) {
   const [step, setStep] = useState(1);
@@ -20,10 +21,10 @@ export default function Inspect({ onCancel }: { onCancel: () => void }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
+  const [activePhotoItem, setActivePhotoItem] = useState<string | null>(null);
 
   React.useEffect(() => {
-    if (!auth.currentUser) return;
-    const q = query(collection(db, 'vehicles'), where('userId', '==', auth.currentUser.uid));
+    const q = query(collection(db, 'vehicles'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setVehicles(docs);
@@ -52,12 +53,12 @@ export default function Inspect({ onCancel }: { onCancel: () => void }) {
   };
 
   const handleSubmit = async () => {
-    if (!auth.currentUser || !type || !selectedVehicleId) return;
+    if (!type || !selectedVehicleId) return;
     
     setIsSubmitting(true);
     try {
       const reportData = {
-        userId: auth.currentUser.uid,
+        userId: auth.currentUser?.uid || 'shared',
         vehicleId: selectedVehicleId,
         type: type,
         date: new Date().toISOString(),
@@ -174,40 +175,91 @@ export default function Inspect({ onCancel }: { onCancel: () => void }) {
 
             <div className="space-y-4">
               {items.map((item) => (
-                <div key={item.id} className="bento-card !p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-6 hover:bg-zinc-900/60">
-                  <p className="font-bold text-zinc-200 text-lg italic uppercase tracking-tight">{item.label}</p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => updateItemStatus(item.id, 'ok')}
-                      className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all ${
-                        item.status === 'ok' 
-                          ? 'bg-green-500 border-green-500 text-zinc-950 shadow-[0_0_15px_rgba(34,197,94,0.3)]' 
-                          : 'bg-zinc-950 border-zinc-800 text-zinc-600 hover:border-zinc-700'
-                      }`}
-                    >
-                      PASSED
-                    </button>
-                    <button
-                      onClick={() => updateItemStatus(item.id, 'issue')}
-                      className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all ${
-                        item.status === 'issue' 
-                          ? 'bg-red-500 border-red-500 text-zinc-950 shadow-[0_0_15px_rgba(239,68,68,0.3)]' 
-                          : 'bg-zinc-950 border-zinc-800 text-zinc-600 hover:border-zinc-700'
-                      }`}
-                    >
-                      ISSUE
-                    </button>
-                    <button
-                      onClick={() => updateItemStatus(item.id, 'n/a')}
-                      className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all ${
-                        item.status === 'n/a' 
-                          ? 'bg-zinc-700 border-zinc-700 text-white' 
-                          : 'bg-zinc-950 border-zinc-800 text-zinc-600 hover:border-zinc-700'
-                      }`}
-                    >
-                      N/A
-                    </button>
+                <div key={item.id} className="bento-card !p-5 flex flex-col gap-4 hover:bg-zinc-900/60 transition-all">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                    <p className="font-bold text-zinc-200 text-lg italic uppercase tracking-tight">{item.label}</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => updateItemStatus(item.id, 'ok')}
+                        className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                          item.status === 'ok' 
+                            ? 'bg-green-500 border-green-500 text-zinc-950 shadow-[0_0_15px_rgba(34,197,94,0.3)]' 
+                            : 'bg-zinc-950 border-zinc-800 text-zinc-600 hover:border-zinc-700'
+                        }`}
+                      >
+                        PASSED
+                      </button>
+                      <button
+                        onClick={() => updateItemStatus(item.id, 'issue')}
+                        className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                          item.status === 'issue' 
+                            ? 'bg-red-500 border-red-500 text-zinc-950 shadow-[0_0_15px_rgba(239,68,68,0.3)]' 
+                            : 'bg-zinc-950 border-zinc-800 text-zinc-600 hover:border-zinc-700'
+                        }`}
+                      >
+                        ISSUE
+                      </button>
+                      <button
+                        onClick={() => updateItemStatus(item.id, 'n/a')}
+                        className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                          item.status === 'n/a' 
+                            ? 'bg-zinc-700 border-zinc-700 text-white' 
+                            : 'bg-zinc-950 border-zinc-800 text-zinc-600 hover:border-zinc-700'
+                        }`}
+                      >
+                        N/A
+                      </button>
+                    </div>
                   </div>
+
+                  {item.status === 'issue' && (
+                    <div className="p-4 bg-zinc-950/60 border border-zinc-800 rounded-2xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+                      <div className="flex-1 space-y-1">
+                        <label className="text-[9px] font-black uppercase text-zinc-500 tracking-wider">Catatan Isu / Kerusakan</label>
+                        <input 
+                          type="text"
+                          placeholder="Misal: Retak, bocor, aus, lampu mati..."
+                          value={item.comment || ''}
+                          onChange={(e) => {
+                            const comment = e.target.value;
+                            setItems(items.map(it => it.id === item.id ? { ...it, comment } : it));
+                          }}
+                          className="w-full bg-zinc-900 border border-zinc-800 focus:border-amber-500/50 rounded-xl px-4 py-2.5 text-xs text-white font-bold uppercase placeholder:text-zinc-700 outline-none transition-all"
+                        />
+                      </div>
+                      <div className="shrink-0 flex items-center gap-3">
+                        {item.photo ? (
+                          <div className="relative group">
+                            <img 
+                              src={item.photo} 
+                              alt="Bukti Masalah" 
+                              className="w-16 h-16 rounded-xl object-cover border border-zinc-800 shadow-inner"
+                              referrerPolicy="no-referrer"
+                            />
+                            <button 
+                              onClick={() => {
+                                setItems(items.map(it => it.id === item.id ? { ...it, photo: undefined } : it));
+                              }}
+                              className="absolute -top-1.5 -right-1.5 p-1 bg-rose-500 hover:bg-rose-600 rounded-full text-white transition-colors"
+                              title="Hapus Foto"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setActivePhotoItem(item.id);
+                            }}
+                            className="px-4 py-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 hover:border-amber-500/50 rounded-xl text-[10px] font-black uppercase tracking-wider italic transition-all flex items-center gap-2"
+                          >
+                            <Camera className="w-4 h-4" />
+                            AMBIL FOTO BUKTI
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -287,6 +339,18 @@ export default function Inspect({ onCancel }: { onCancel: () => void }) {
                  </button>
               </div>
            </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {activePhotoItem !== null && (
+          <CameraCapture 
+            title={`Foto: ${items.find(it => it.id === activePhotoItem)?.label}`}
+            onClose={() => setActivePhotoItem(null)}
+            onCapture={(photoData) => {
+              setItems(items.map(it => it.id === activePhotoItem ? { ...it, photo: photoData } : it));
+            }}
+          />
         )}
       </AnimatePresence>
     </div>

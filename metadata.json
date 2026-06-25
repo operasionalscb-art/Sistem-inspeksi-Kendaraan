@@ -1,6 +1,6 @@
 {
   "name": "SIK - Sistem Inspeksi Kendaraan",
   "description": "Aplikasi ceklist inspeksi kendaraan harian, mingguan, dan bulanan untuk driver dengan sistem notifikasi.",
-  "requestFramePermissions": [],
-  "majorCapabilities": []
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
