@@ -23,12 +23,43 @@ import {
   AlertTriangle,
   Settings,
   Key,
-  Chrome
+  Chrome,
+  Search,
+  Filter,
+  Check,
+  Activity,
+  Eye,
+  Phone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './FirebaseProvider';
 import { db } from '../lib/firebase';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
+
+interface Permission {
+  id: string;
+  label: string;
+  description: string;
+}
+
+const ROLE_PERMISSIONS: Record<string, string[]> = {
+  driver: ['inspect_own', 'view_own_history'],
+  inspector: ['inspect_all', 'edit_odometer', 'view_all_history'],
+  admin: ['manage_fleet', 'view_all_history', 'send_notifications'],
+  super_admin: ['manage_fleet', 'view_all_history', 'send_notifications', 'manage_accounts', 'edit_roles'],
+};
+
+const ALL_PERMISSIONS: Permission[] = [
+  { id: 'inspect_own', label: 'Mengisi Inspeksi Mandiri', description: 'Mengisi laporan harian/mingguan armada yang ditugaskan' },
+  { id: 'inspect_all', label: 'Inspeksi Semua Armada', description: 'Mengisi inspeksi untuk unit apa saja tanpa batasan' },
+  { id: 'edit_odometer', label: 'Koreksi Odometer', description: 'Memperbarui dan mengoreksi data angka kilometer armada' },
+  { id: 'view_own_history', label: 'Melihat Riwayat Pribadi', description: 'Melihat laporan inspeksi yang dikirim sendiri' },
+  { id: 'view_all_history', label: 'Melihat Semua Riwayat', description: 'Akses penuh ke semua laporan historis armada' },
+  { id: 'manage_fleet', label: 'Kelola Unit Fleet', description: 'Menambah, mengubah, dan menghapus armada SCB' },
+  { id: 'send_notifications', label: 'Kirim Notifikasi', description: 'Mengirim peringatan dan informasi penting ke pengemudi' },
+  { id: 'manage_accounts', label: 'Pengelolaan Akun', description: 'Menambah, menonaktifkan, dan menghapus akun pengguna' },
+  { id: 'edit_roles', label: 'Modifikasi Hak Akses', description: 'Mengatur peran (role) dan memodifikasi izin akses sistem' },
+];
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -37,15 +68,35 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, activeTab, setActiveTab }: LayoutProps) {
-  const { user, role, loginWithEmail, loginWithGoogle, logout } = useAuth();
+  const { user, role, loginWithEmail, registerWithEmail, loginWithGoogle, logout } = useAuth();
+  const isGuest = user?.isAnonymous || !user;
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [newDriverName, setNewDriverName] = useState('');
   const [newDriverEmail, setNewDriverEmail] = useState('');
+  const [newDriverPhone, setNewDriverPhone] = useState('');
+  const [newDriverRole, setNewDriverRole] = useState<'driver' | 'inspector' | 'admin' | 'super_admin'>('driver');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
+  
+  // Login states
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  
+  // Registration states
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [registerName, setRegisterName] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerPhone, setRegisterPhone] = useState('');
+  const [registerRole, setRegisterRole] = useState<'driver' | 'inspector' | 'admin'>('driver');
+  const [registerError, setRegisterError] = useState('');
+  const [isRegisteringProcess, setIsRegisteringProcess] = useState(false);
+
   const [isAddingDriver, setIsAddingDriver] = useState(false);
 
   const tabs = [
@@ -74,6 +125,7 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
               email: 'ahmad.jayadi@scb.id',
               phone: '0812-3456-7890',
               status: 'Aktif',
+              role: 'driver',
               addedAt: new Date().toISOString()
             });
             await addDoc(collection(db, 'drivers'), {
@@ -81,6 +133,15 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
               email: 'prasetyo.utomo@scb.id',
               phone: '0857-9876-5432',
               status: 'Aktif',
+              role: 'driver',
+              addedAt: new Date().toISOString()
+            });
+            await addDoc(collection(db, 'drivers'), {
+              name: 'Bambang Triyono',
+              email: 'bambang.inspector@scb.id',
+              phone: '0813-8888-9999',
+              status: 'Aktif',
+              role: 'inspector',
               addedAt: new Date().toISOString()
             });
           } catch (e) {
@@ -110,6 +171,33 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
     }
   };
 
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!registerEmail || !registerName) return;
+    setIsRegisteringProcess(true);
+    setRegisterError('');
+    try {
+      await registerWithEmail(
+        registerEmail,
+        registerPassword || 'admin123',
+        registerName,
+        registerPhone || '---',
+        registerRole
+      );
+      setRegisterName('');
+      setRegisterEmail('');
+      setRegisterPassword('');
+      setRegisterPhone('');
+      setRegisterRole('driver');
+      setIsRegisterMode(false);
+      setIsAccountOpen(false);
+    } catch (err: any) {
+      setRegisterError(err.message || 'Pendaftaran gagal. Silakan coba lagi.');
+    } finally {
+      setIsRegisteringProcess(false);
+    }
+  };
+
   const handleQuickLoginAdmin = async () => {
     setIsLoggingIn(true);
     setLoginError('');
@@ -130,11 +218,15 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
       await addDoc(collection(db, 'drivers'), {
         name: newDriverName,
         email: newDriverEmail,
+        phone: newDriverPhone || '---',
+        role: newDriverRole,
         status: 'Aktif',
         addedAt: new Date().toISOString()
       });
       setNewDriverName('');
       setNewDriverEmail('');
+      setNewDriverPhone('');
+      setNewDriverRole('driver');
     } catch (err) {
       console.error("Failed to add driver:", err);
     } finally {
@@ -142,10 +234,29 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
     }
   };
 
+  const handleUpdateDriverRole = async (id: string, newRole: string) => {
+    try {
+      await setDoc(doc(db, 'drivers', id), { role: newRole }, { merge: true });
+    } catch (err) {
+      console.error("Failed to update driver role:", err);
+    }
+  };
+
+  const handleUpdateDriverStatus = async (id: string, newStatus: string) => {
+    try {
+      await setDoc(doc(db, 'drivers', id), { status: newStatus }, { merge: true });
+    } catch (err) {
+      console.error("Failed to update driver status:", err);
+    }
+  };
+
   const handleDeleteDriver = async (id: string) => {
-    if (confirm('Hapus driver ini dari sistem?')) {
+    if (confirm('Hapus akun ini dari sistem?')) {
       try {
         await deleteDoc(doc(db, 'drivers', id));
+        if (selectedDriverId === id) {
+          setSelectedDriverId(null);
+        }
       } catch (err) {
         console.error("Failed to delete driver:", err);
       }
@@ -175,7 +286,10 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
               }`}
             >
               <tab.icon className="w-5 h-5" />
-              <span className="font-bold uppercase text-xs tracking-widest">{tab.label}</span>
+              <span className="font-bold uppercase text-xs tracking-widest flex items-center gap-1.5">
+                {tab.label}
+                {tab.id === 'inspect' && isGuest && <Lock className="w-3.5 h-3.5 text-zinc-600" />}
+              </span>
             </button>
           ))}
         </nav>
@@ -246,7 +360,14 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
               activeTab === tab.id ? 'text-amber-500 scale-110' : 'text-zinc-600'
             }`}
           >
-            <tab.icon className="w-5 h-5" />
+            <div className="relative">
+              <tab.icon className="w-5 h-5" />
+              {tab.id === 'inspect' && isGuest && (
+                <div className="absolute -top-1.5 -right-1.5 bg-zinc-950 border border-zinc-800 rounded-full p-0.5">
+                  <Lock className="w-2.5 h-2.5 text-zinc-500" />
+                </div>
+              )}
+            </div>
             <span className="text-[9px] font-black uppercase tracking-tighter">{tab.label}</span>
           </button>
         ))}
@@ -271,7 +392,7 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               transition={{ type: "spring", duration: 0.4 }}
-              className="relative w-full max-w-2xl bg-zinc-900 border-2 border-zinc-800 rounded-[32px] overflow-hidden shadow-2xl flex flex-col max-h-[85vh] z-10"
+              className={`relative w-full ${user && role === 'super_admin' ? 'max-w-4xl' : 'max-w-md'} bg-zinc-900 border-2 border-zinc-800 rounded-[32px] overflow-hidden shadow-2xl flex flex-col max-h-[85vh] z-10 transition-all duration-300`}
             >
               {/* Header */}
               <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
@@ -333,180 +454,569 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
                   )}
                 </div>
 
-                {/* Case 1: NOT LOGGED IN AS SUPER ADMIN -> LOGIN FORM */}
+                {/* Case 1: NOT LOGGED IN AS SUPER ADMIN -> LOGIN / REGISTER FORM */}
                 {role !== 'super_admin' ? (
-                  <div className="space-y-4">
-                    <div className="text-center py-2">
-                      <h3 className="text-lg font-bold text-white uppercase tracking-tight">Masuk Sebagai Super Admin</h3>
-                      <p className="text-xs text-zinc-500 mt-1">Silakan masuk menggunakan email SCB untuk mengelola pengemudi & armada</p>
-                    </div>
-
-                    <form onSubmit={handleLoginSubmit} className="space-y-4 max-w-md mx-auto">
-                      <div>
-                        <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">EMAIL OPERASIONAL</label>
-                        <div className="relative">
-                          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
-                          <input 
-                            type="email" 
-                            placeholder="operasional.scb@gmail.com"
-                            value={loginEmail}
-                            onChange={(e) => setLoginEmail(e.target.value)}
-                            className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
-                            required
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">PASSWORD</label>
-                        <div className="relative">
-                          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
-                          <input 
-                            type="password" 
-                            placeholder="••••••••"
-                            value={loginPassword}
-                            onChange={(e) => setLoginPassword(e.target.value)}
-                            className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
-                          />
-                        </div>
-                        <p className="text-[10px] text-zinc-500 mt-1.5 italic">Gunakan email operasional.scb@gmail.com (Password default: admin123)</p>
-                      </div>
-
-                      {loginError && (
-                        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 text-[11px] font-bold flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 shrink-0" />
-                          <span>{loginError}</span>
-                        </div>
-                      )}
-
-                      <div className="pt-2 flex flex-col gap-3">
-                        <button 
-                          type="submit"
-                          disabled={isLoggingIn}
-                          className="btn-primary w-full py-3.5 flex items-center justify-center gap-2 text-xs font-black uppercase italic tracking-widest"
-                        >
-                          <Key className="w-4 h-4" />
-                          {isLoggingIn ? 'MEMPROSES...' : 'MASUK DENGAN EMAIL'}
-                        </button>
-
-                        <button 
-                          type="button"
-                          onClick={handleQuickLoginAdmin}
-                          disabled={isLoggingIn}
-                          className="w-full py-3.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-2 border-dashed border-amber-500/40 rounded-xl text-xs font-black uppercase tracking-widest italic transition-all flex items-center justify-center gap-2"
-                        >
-                          <Shield className="w-4 h-4" />
-                          MASUK CEPAT SUPER ADMIN
-                        </button>
-
-                        <div className="relative flex py-2 items-center">
-                          <div className="flex-grow border-t border-zinc-800"></div>
-                          <span className="flex-shrink mx-4 text-[10px] font-black text-zinc-600 uppercase tracking-wider">ATAU</span>
-                          <div className="flex-grow border-t border-zinc-800"></div>
-                        </div>
-
-                        <button 
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await loginWithGoogle();
-                            } catch (e) {
-                              console.error(e);
-                            }
-                          }}
-                          className="w-full py-3 bg-zinc-950 hover:bg-zinc-800 text-white border-2 border-zinc-800 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
-                        >
-                          <Chrome className="w-4 h-4 text-amber-500" />
-                          INTEGRASI GOOGLE SIGN-IN
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                ) : (
-                  /* Case 2: LOGGED IN AS SUPER ADMIN -> MANAGE DRIVERS PANEL */
                   <div className="space-y-6">
-                    <div className="flex items-center gap-2 text-amber-500">
-                      <Users className="w-5 h-5" />
-                      <h3 className="text-sm font-black uppercase tracking-widest italic">Panel Pengelolaan Pengemudi SCB</h3>
+                    {/* Sliding tab toggle */}
+                    <div className="flex bg-zinc-950 p-1.5 rounded-2xl border border-zinc-800 max-w-md mx-auto">
+                      <button
+                        type="button"
+                        onClick={() => setIsRegisterMode(false)}
+                        className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider italic transition-all ${
+                          !isRegisterMode 
+                            ? 'bg-amber-500 text-zinc-950 font-black' 
+                            : 'text-zinc-500 hover:text-white'
+                        }`}
+                      >
+                        MASUK AKUN
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsRegisterMode(true)}
+                        className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider italic transition-all ${
+                          isRegisterMode 
+                            ? 'bg-amber-500 text-zinc-950 font-black' 
+                            : 'text-zinc-500 hover:text-white'
+                        }`}
+                      >
+                        DAFTAR AKUN
+                      </button>
                     </div>
 
-                    {/* Form tambah driver baru */}
-                    <form onSubmit={handleAddDriver} className="p-4 bg-zinc-950/30 border border-zinc-800 rounded-2xl space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Nama Lengkap</label>
-                          <input 
-                            type="text" 
-                            placeholder="Contoh: Budi Santoso"
-                            value={newDriverName}
-                            onChange={(e) => setNewDriverName(e.target.value)}
-                            className="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 text-white rounded-xl py-2.5 px-4 text-xs font-bold outline-none transition-all"
-                            required
-                          />
+                    {isRegisterMode ? (
+                      <div className="space-y-4">
+                        <div className="text-center py-1">
+                          <h3 className="text-lg font-black text-white uppercase tracking-tight italic">Registrasi Akun Baru</h3>
+                          <p className="text-xs text-zinc-500 mt-1">Buat akun Driver, Inspector, atau Admin Anda untuk terintegrasi dengan armada SCB</p>
                         </div>
-                        <div>
-                          <label className="block text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Email Pengemudi</label>
-                          <input 
-                            type="email" 
-                            placeholder="budi@scb.id"
-                            value={newDriverEmail}
-                            onChange={(e) => setNewDriverEmail(e.target.value)}
-                            className="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 text-white rounded-xl py-2.5 px-4 text-xs font-bold outline-none transition-all"
-                            required
-                          />
-                        </div>
-                      </div>
-                      <div className="flex justify-end">
-                        <button 
-                          type="submit"
-                          disabled={isAddingDriver}
-                          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-black uppercase tracking-wider text-[10px] rounded-lg transition-all italic flex items-center gap-1.5"
-                        >
-                          <Plus className="w-4 h-4" />
-                          TAMBAH DRIVER
-                        </button>
-                      </div>
-                    </form>
 
-                    {/* Daftar Driver saat ini */}
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Daftar Driver Aktif ({drivers.length})</span>
-                        <span className="text-[9px] font-mono text-zinc-600 italic">DATABASE CLOUD SYNCHRONIZED</span>
-                      </div>
-
-                      <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
-                        {drivers.map((driver) => (
-                          <div key={driver.id} className="p-3.5 bg-zinc-950/70 border border-zinc-800 hover:border-zinc-700 rounded-xl flex justify-between items-center transition-all">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 text-amber-500 font-bold text-xs flex items-center justify-center uppercase">
-                                {driver.name?.[0] || 'D'}
-                              </div>
-                              <div>
-                                <p className="text-xs font-black text-white uppercase italic">{driver.name}</p>
-                                <p className="text-[10px] text-zinc-500 font-mono">{driver.email}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-[9px] font-black bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-2 py-0.5 rounded-full uppercase">
-                                {driver.status || 'Aktif'}
-                              </span>
-                              <button 
-                                onClick={() => handleDeleteDriver(driver.id)}
-                                className="p-1.5 bg-zinc-900 hover:bg-red-500/10 text-zinc-500 hover:text-red-500 border border-zinc-800 rounded-lg transition-all"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                        <form onSubmit={handleRegisterSubmit} className="space-y-4 max-w-md mx-auto">
+                          <div>
+                            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">NAMA LENGKAP</label>
+                            <div className="relative">
+                              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
+                              <input 
+                                type="text" 
+                                placeholder="Contoh: Ahmad Jayadi"
+                                value={registerName}
+                                onChange={(e) => setRegisterName(e.target.value)}
+                                className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
+                                required
+                              />
                             </div>
                           </div>
-                        ))}
 
-                        {drivers.length === 0 && (
-                          <div className="text-center py-6 border border-dashed border-zinc-800 rounded-xl text-zinc-600 text-xs italic">
-                            Sedang memuat data driver SCB...
+                          <div>
+                            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">ALAMAT EMAIL</label>
+                            <div className="relative">
+                              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
+                              <input 
+                                type="email" 
+                                placeholder="driver@scb.id"
+                                value={registerEmail}
+                                onChange={(e) => setRegisterEmail(e.target.value)}
+                                className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
+                                required
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">NOMOR TELEPON</label>
+                              <div className="relative">
+                                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
+                                <input 
+                                  type="tel" 
+                                  placeholder="0812xxxxxx"
+                                  value={registerPhone}
+                                  onChange={(e) => setRegisterPhone(e.target.value)}
+                                  className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">PASSWORD</label>
+                              <div className="relative">
+                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
+                                <input 
+                                  type="password" 
+                                  placeholder="••••••••"
+                                  value={registerPassword}
+                                  onChange={(e) => setRegisterPassword(e.target.value)}
+                                  className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
+                                  required
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">PERAN (ROLE) AKSES</label>
+                            <select 
+                              value={registerRole}
+                              onChange={(e) => setRegisterRole(e.target.value as any)}
+                              className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 px-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all appearance-none cursor-pointer"
+                            >
+                              <option value="driver">DRIVER (Pengemudi Armada)</option>
+                              <option value="inspector">INSPECTOR (Pemeriksa Teknis)</option>
+                              <option value="admin">ADMIN (Staf Operasional)</option>
+                            </select>
+                          </div>
+
+                          {registerError && (
+                            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 text-[11px] font-bold flex items-center gap-2">
+                              <AlertTriangle className="w-4 h-4 shrink-0" />
+                              <span>{registerError}</span>
+                            </div>
+                          )}
+
+                          <div className="pt-2">
+                            <button 
+                              type="submit"
+                              disabled={isRegisteringProcess}
+                              className="btn-primary w-full py-3.5 flex items-center justify-center gap-2 text-xs font-black uppercase italic tracking-widest"
+                            >
+                              <Plus className="w-4 h-4" />
+                              {isRegisteringProcess ? 'MENDAFTARKAN...' : 'DAFTARKAN AKUN BARU'}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="text-center py-1">
+                          <h3 className="text-lg font-black text-white uppercase tracking-tight italic">Masuk ke Sistem</h3>
+                          <p className="text-xs text-zinc-500 mt-1">Silakan masuk menggunakan email dan password Anda untuk sinkronisasi data</p>
+                        </div>
+
+                        <form onSubmit={handleLoginSubmit} className="space-y-4 max-w-md mx-auto">
+                          <div>
+                            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">EMAIL OPERASIONAL / DRIVER</label>
+                            <div className="relative">
+                              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
+                              <input 
+                                type="email" 
+                                placeholder="operasional.scb@gmail.com atau driver@scb.id"
+                                value={loginEmail}
+                                onChange={(e) => setLoginEmail(e.target.value)}
+                                className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
+                                required
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">PASSWORD</label>
+                            <div className="relative">
+                              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
+                              <input 
+                                type="password" 
+                                placeholder="••••••••"
+                                value={loginPassword}
+                                onChange={(e) => setLoginPassword(e.target.value)}
+                                className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
+                              />
+                            </div>
+                            <p className="text-[10px] text-zinc-500 mt-1.5 italic">Gunakan password Anda (Password default: admin123)</p>
+                          </div>
+
+                          {loginError && (
+                            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 text-[11px] font-bold flex items-center gap-2">
+                              <AlertTriangle className="w-4 h-4 shrink-0" />
+                              <span>{loginError}</span>
+                            </div>
+                          )}
+
+                          <div className="pt-2 flex flex-col gap-3">
+                            <button 
+                              type="submit"
+                              disabled={isLoggingIn}
+                              className="btn-primary w-full py-3.5 flex items-center justify-center gap-2 text-xs font-black uppercase italic tracking-widest"
+                            >
+                              <Key className="w-4 h-4" />
+                              {isLoggingIn ? 'MEMPROSES...' : 'MASUK DENGAN EMAIL'}
+                            </button>
+
+                            <button 
+                              type="button"
+                              onClick={handleQuickLoginAdmin}
+                              disabled={isLoggingIn}
+                              className="w-full py-3.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-2 border-dashed border-amber-500/40 rounded-xl text-xs font-black uppercase tracking-widest italic transition-all flex items-center justify-center gap-2"
+                            >
+                              <Shield className="w-4 h-4" />
+                              MASUK CEPAT SUPER ADMIN
+                            </button>
+
+                            <div className="relative flex py-2 items-center">
+                              <div className="flex-grow border-t border-zinc-800"></div>
+                              <span className="flex-shrink mx-4 text-[10px] font-black text-zinc-600 uppercase tracking-wider">ATAU</span>
+                              <div className="flex-grow border-t border-zinc-800"></div>
+                            </div>
+
+                            <button 
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await loginWithGoogle();
+                                } catch (e) {
+                                  console.error(e);
+                                }
+                              }}
+                              className="w-full py-3 bg-zinc-950 hover:bg-zinc-800 text-white border-2 border-zinc-800 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                            >
+                              <Chrome className="w-4 h-4 text-amber-500" />
+                              INTEGRASI GOOGLE SIGN-IN
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Case 2: LOGGED IN AS SUPER ADMIN -> ADVANCED ACCOUNT & ACCESS CONTROL MANAGEMENT */
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start h-[55vh]">
+                    {/* Left Column: Accounts Directory (5 cols) */}
+                    <div className="lg:col-span-5 flex flex-col h-full bg-zinc-950/20 border border-zinc-800 rounded-2xl overflow-hidden p-4 space-y-4">
+                      {/* Search & Filter Header */}
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5">
+                            <Activity className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                            Direktori Akun ({(
+                              drivers.filter(driver => {
+                                const matchesSearch = 
+                                  driver.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                  driver.email?.toLowerCase().includes(searchQuery.toLowerCase());
+                                const driverRole = driver.role || 'driver';
+                                const matchesRole = roleFilter === 'all' || driverRole === roleFilter;
+                                const matchesStatus = statusFilter === 'all' || (driver.status || 'Aktif') === statusFilter;
+                                return matchesSearch && matchesRole && matchesStatus;
+                              })
+                            ).length})
+                          </span>
+                          <button
+                            onClick={() => setSelectedDriverId(null)}
+                            className="text-[9px] font-bold text-amber-500 hover:text-amber-400 uppercase tracking-widest flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" /> Tambah Baru
+                          </button>
+                        </div>
+
+                        {/* Search Input */}
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600 w-3.5 h-3.5" />
+                          <input
+                            type="text"
+                            placeholder="Cari nama atau email..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-xl py-2 pl-9 pr-4 text-xs font-medium outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
+                          />
+                        </div>
+
+                        {/* Filter row */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="relative">
+                            <select
+                              value={roleFilter}
+                              onChange={(e) => setRoleFilter(e.target.value)}
+                              className="w-full bg-zinc-950 text-zinc-400 font-bold text-[9px] outline-none border border-zinc-800 px-2 py-1.5 rounded-lg cursor-pointer appearance-none uppercase"
+                            >
+                              <option value="all">Semua Peran</option>
+                              <option value="driver">Driver</option>
+                              <option value="inspector">Inspector</option>
+                              <option value="admin">Admin</option>
+                              <option value="super_admin">Super Admin</option>
+                            </select>
+                          </div>
+                          <div className="relative">
+                            <select
+                              value={statusFilter}
+                              onChange={(e) => setStatusFilter(e.target.value)}
+                              className="w-full bg-zinc-950 text-zinc-400 font-bold text-[9px] outline-none border border-zinc-800 px-2 py-1.5 rounded-lg cursor-pointer appearance-none uppercase"
+                            >
+                              <option value="all">Semua Status</option>
+                              <option value="Aktif">Aktif</option>
+                              <option value="Nonaktif">Nonaktif</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Scrollable list */}
+                      <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[35vh]">
+                        {drivers
+                          .filter(driver => {
+                            const matchesSearch = 
+                              driver.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                              driver.email?.toLowerCase().includes(searchQuery.toLowerCase());
+                            const driverRole = driver.role || 'driver';
+                            const matchesRole = roleFilter === 'all' || driverRole === roleFilter;
+                            const matchesStatus = statusFilter === 'all' || (driver.status || 'Aktif') === statusFilter;
+                            return matchesSearch && matchesRole && matchesStatus;
+                          })
+                          .map((driver) => {
+                            const driverRole = driver.role || 'driver';
+                            const isSelected = selectedDriverId === driver.id;
+                            return (
+                              <div
+                                key={driver.id}
+                                onClick={() => setSelectedDriverId(driver.id)}
+                                className={`p-3 bg-zinc-950/60 border rounded-xl flex items-center justify-between cursor-pointer transition-all hover:border-zinc-700 ${
+                                  isSelected ? 'border-amber-500/50 bg-amber-500/[0.02]' : 'border-zinc-800'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center uppercase shrink-0 ${
+                                    isSelected ? 'bg-amber-500 text-zinc-950' : 'bg-zinc-900 border border-zinc-800 text-zinc-400'
+                                  }`}>
+                                    {driver.name?.[0] || 'A'}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-black text-white uppercase italic truncate">{driver.name}</p>
+                                    <p className="text-[9px] text-zinc-500 font-mono truncate">{driver.email}</p>
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-col items-end gap-1 shrink-0">
+                                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider ${
+                                    driverRole === 'super_admin' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
+                                    driverRole === 'admin' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
+                                    driverRole === 'inspector' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                                    'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                                  }`}>
+                                    {driverRole === 'super_admin' ? 'Super Admin' : 
+                                     driverRole === 'admin' ? 'Admin' : 
+                                     driverRole === 'inspector' ? 'Inspector' : 'Driver'}
+                                  </span>
+                                  <span className={`text-[8px] font-bold ${
+                                    (driver.status || 'Aktif') === 'Aktif' ? 'text-emerald-500' : 'text-zinc-500'
+                                  }`}>
+                                    ● {driver.status || 'Aktif'}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                        {drivers.filter(driver => {
+                          const matchesSearch = 
+                            driver.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            driver.email?.toLowerCase().includes(searchQuery.toLowerCase());
+                          const driverRole = driver.role || 'driver';
+                          const matchesRole = roleFilter === 'all' || driverRole === roleFilter;
+                          const matchesStatus = statusFilter === 'all' || (driver.status || 'Aktif') === statusFilter;
+                          return matchesSearch && matchesRole && matchesStatus;
+                        }).length === 0 && (
+                          <div className="text-center py-8 border border-dashed border-zinc-800 rounded-xl text-zinc-600 text-xs italic">
+                            Tidak ada akun yang cocok.
                           </div>
                         )}
                       </div>
+                    </div>
+
+                    {/* Right Column: Add/Details & Matrix View (7 cols) */}
+                    <div className="lg:col-span-7 h-full flex flex-col bg-zinc-950/20 border border-zinc-800 rounded-2xl p-4 overflow-y-auto space-y-4 max-h-[55vh]">
+                      {drivers.find(d => d.id === selectedDriverId) ? (
+                        /* Selected Driver Details & Matrix Mode */
+                        (() => {
+                          const selectedDriver = drivers.find(d => d.id === selectedDriverId);
+                          return (
+                            <div className="space-y-4">
+                              {/* Header Detail */}
+                              <div className="flex justify-between items-start pb-3 border-b border-zinc-800">
+                                <div className="min-w-0 flex-1 pr-4">
+                                  <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest">Detail Akun & Peran</span>
+                                  <h4 className="text-base font-black text-white uppercase italic truncate">{selectedDriver.name}</h4>
+                                  <p className="text-[10px] text-zinc-400 font-mono truncate">{selectedDriver.email}</p>
+                                </div>
+                                <button
+                                  onClick={() => handleDeleteDriver(selectedDriver.id)}
+                                  className="px-2.5 py-1.5 bg-red-500/10 border border-red-500/20 hover:bg-red-500 hover:text-zinc-950 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-1 shrink-0"
+                                  title="Hapus Akun"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" /> HAPUS
+                                </button>
+                              </div>
+
+                              {/* Quick Edit Panel */}
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">Hak Akses Peran (Role)</label>
+                                  <select
+                                    value={selectedDriver.role || 'driver'}
+                                    onChange={(e) => handleUpdateDriverRole(selectedDriver.id, e.target.value)}
+                                    className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-xl py-2 px-3 text-xs font-bold outline-none focus:border-amber-500/50 transition-all cursor-pointer"
+                                  >
+                                    <option value="driver">Driver (Pengemudi)</option>
+                                    <option value="inspector">Inspector (Pemeriksa)</option>
+                                    <option value="admin">Admin Operasional</option>
+                                    <option value="super_admin">Super Admin</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">Status Akun</label>
+                                  <select
+                                    value={selectedDriver.status || 'Aktif'}
+                                    onChange={(e) => handleUpdateDriverStatus(selectedDriver.id, e.target.value)}
+                                    className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-xl py-2 px-3 text-xs font-bold outline-none focus:border-amber-500/50 transition-all cursor-pointer"
+                                  >
+                                    <option value="Aktif">Aktif</option>
+                                    <option value="Nonaktif">Nonaktif</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* Details info block */}
+                              <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-850 grid grid-cols-2 gap-2 text-left">
+                                <div>
+                                  <p className="text-[8px] font-black text-zinc-500 uppercase">Nomor Telepon</p>
+                                  <p className="text-xs font-bold text-zinc-300">{selectedDriver.phone || '---'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[8px] font-black text-zinc-500 uppercase">Ditambahkan Pada</p>
+                                  <p className="text-xs font-mono text-zinc-400">
+                                    {selectedDriver.addedAt ? new Date(selectedDriver.addedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '---'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Access Rights Matrix */}
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Matriks Hak Akses & Izin</span>
+                                  <span className="text-[9px] text-amber-500 font-mono uppercase font-black italic">
+                                    Peran: {selectedDriver.role || 'driver'}
+                                  </span>
+                                </div>
+
+                                <div className="border border-zinc-850 rounded-xl overflow-hidden bg-zinc-950/40 divide-y divide-zinc-900">
+                                  {ALL_PERMISSIONS.map((perm) => {
+                                    const driverRole = selectedDriver.role || 'driver';
+                                    const hasPermission = ROLE_PERMISSIONS[driverRole]?.includes(perm.id);
+                                    return (
+                                      <div key={perm.id} className="p-2.5 flex items-start justify-between gap-3 text-left">
+                                        <div className="min-w-0">
+                                          <p className={`text-xs font-black uppercase tracking-tight ${hasPermission ? 'text-zinc-200' : 'text-zinc-600 line-through'}`}>
+                                            {perm.label}
+                                          </p>
+                                          <p className="text-[9px] text-zinc-500 font-medium leading-relaxed">
+                                            {perm.description}
+                                          </p>
+                                        </div>
+                                        <div className="shrink-0 pt-0.5">
+                                          {hasPermission ? (
+                                            <div className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center">
+                                              <Check className="w-2.5 h-2.5" />
+                                            </div>
+                                          ) : (
+                                            <div className="w-4 h-4 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-700 flex items-center justify-center text-[8px] font-bold">
+                                              ✕
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        /* Add User Form Mode */
+                        <div className="space-y-4">
+                          <div className="pb-3 border-b border-zinc-800">
+                            <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest">Registrasi Akun Baru</span>
+                            <h4 className="text-base font-black text-white uppercase italic">Tambah Pengguna & Peran</h4>
+                            <p className="text-[10px] text-zinc-400">Daftarkan akun operasional baru ke cloud database.</p>
+                          </div>
+
+                          <form onSubmit={handleAddDriver} className="space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Nama Lengkap</label>
+                                <input
+                                  type="text"
+                                  placeholder="Contoh: Budi Santoso"
+                                  value={newDriverName}
+                                  onChange={(e) => setNewDriverName(e.target.value)}
+                                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 text-white rounded-xl py-2 px-3 text-xs font-bold outline-none transition-all placeholder:text-zinc-700"
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Email Pengguna</label>
+                                <input
+                                  type="email"
+                                  placeholder="budi@scb.id"
+                                  value={newDriverEmail}
+                                  onChange={(e) => setNewDriverEmail(e.target.value)}
+                                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 text-white rounded-xl py-2 px-3 text-xs font-bold outline-none transition-all placeholder:text-zinc-700"
+                                  required
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Nomor Telepon</label>
+                                <input
+                                  type="text"
+                                  placeholder="Contoh: 0812-xxxx-xxxx"
+                                  value={newDriverPhone}
+                                  onChange={(e) => setNewDriverPhone(e.target.value)}
+                                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 text-white rounded-xl py-2 px-3 text-xs font-bold outline-none transition-all placeholder:text-zinc-700"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Pilih Hak Akses (Role)</label>
+                                <select
+                                  value={newDriverRole}
+                                  onChange={(e) => setNewDriverRole(e.target.value as any)}
+                                  className="w-full bg-zinc-950 text-white font-black text-xs outline-none border border-zinc-800 hover:border-amber-500/50 px-3 py-2 rounded-xl cursor-pointer transition-colors"
+                                >
+                                  <option value="driver">Driver (Pengemudi)</option>
+                                  <option value="inspector">Inspector (Pemeriksa)</option>
+                                  <option value="admin">Admin Operasional</option>
+                                  <option value="super_admin">Super Admin</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Dynamically preview permissions matrix for new role */}
+                            <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-800 space-y-1.5 text-left">
+                              <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">
+                                Izin Terkait Peran ({newDriverRole}):
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {ALL_PERMISSIONS.map((perm) => {
+                                  const hasPermission = ROLE_PERMISSIONS[newDriverRole]?.includes(perm.id);
+                                  if (!hasPermission) return null;
+                                  return (
+                                    <span key={perm.id} className="text-[8px] font-black bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-1 rounded-md uppercase">
+                                      {perm.label}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <div className="flex justify-end pt-1">
+                              <button
+                                type="submit"
+                                disabled={isAddingDriver}
+                                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-black uppercase tracking-wider text-[10px] rounded-xl transition-all italic flex items-center gap-1.5"
+                              >
+                                <Plus className="w-4 h-4" />
+                                {isAddingDriver ? 'MENAMBAHKAN...' : 'TAMBAH AKUN BARU'}
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

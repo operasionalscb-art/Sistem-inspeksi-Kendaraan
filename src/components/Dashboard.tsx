@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Truck, Calendar, Activity, AlertTriangle, ChevronRight, TrendingUp, BarChart3, Sparkles } from 'lucide-react';
+import { Truck, Calendar, Activity, AlertTriangle, ChevronRight, TrendingUp, BarChart3, Sparkles, Lock } from 'lucide-react';
 import { useAuth } from './FirebaseProvider';
 import { db } from '../lib/firebase';
 import { collection, query, onSnapshot } from 'firebase/firestore';
@@ -177,14 +177,23 @@ export default function Dashboard({ onStartInspect }: { onStartInspect: () => vo
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4 mt-8 relative z-10">
+        <div className="flex flex-col gap-2 mt-8 relative z-10">
           <button 
             onClick={onStartInspect}
-            className="btn-primary py-5 flex-1 flex items-center justify-center gap-3 text-lg italic"
+            className={`py-5 flex-1 flex items-center justify-center gap-3 text-lg italic transition-all duration-300 ${
+              user?.isAnonymous
+                ? 'bg-zinc-800/80 hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 border border-zinc-700/50 rounded-[20px] font-bold cursor-pointer'
+                : 'btn-primary'
+            }`}
           >
-            <Activity className="w-6 h-6" />
-            MULAI INSPEKSI BARU
+            {user?.isAnonymous ? <Lock className="w-6 h-6 text-zinc-500" /> : <Activity className="w-6 h-6" />}
+            {user?.isAnonymous ? 'MULAI INSPEKSI (AKSES TAMU)' : 'MULAI INSPEKSI BARU'}
           </button>
+          {user?.isAnonymous && (
+            <p className="text-[10px] text-zinc-500 font-mono text-center uppercase tracking-wider italic">
+              * Anda masuk sebagai tamu. Formulir inspeksi dikunci (Read-Only).
+            </p>
+          )}
         </div>
       </div>
 

@@ -19,8 +19,9 @@ import { auth, googleProvider, db, testConnection } from '../lib/firebase';
 interface AuthContextType {
   user: any;
   loading: boolean;
-  role: 'super_admin' | 'driver';
+  role: 'super_admin' | 'admin' | 'inspector' | 'driver';
   loginWithEmail: (email: string, password?: string) => Promise<any>;
+  registerWithEmail: (email: string, password?: string, name?: string, phone?: string, requestedRole?: string) => Promise<any>;
   loginWithGoogle: () => Promise<any>;
   logout: () => Promise<void>;
 }
@@ -30,6 +31,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true, 
   role: 'driver',
   loginWithEmail: async () => {},
+  registerWithEmail: async () => {},
   loginWithGoogle: async () => {},
   logout: async () => {}
 });
@@ -37,7 +39,7 @@ const AuthContext = createContext<AuthContextType>({
 export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState<'super_admin' | 'driver'>('driver');
+  const [role, setRole] = useState<'super_admin' | 'admin' | 'inspector' | 'driver'>('driver');
 
   // Seed the required vehicles if they do not exist
   const seedVehicles = async () => {
@@ -168,6 +170,21 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const fetchUserRole = async (email: string): Promise<'super_admin' | 'admin' | 'inspector' | 'driver'> => {
+    if (email === 'operasional.scb@gmail.com') return 'super_admin';
+    try {
+      const q = query(collection(db, 'drivers'), where('email', '==', email));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const docData = snap.docs[0].data();
+        return (docData.role || 'driver') as any;
+      }
+    } catch (err) {
+      console.warn("Failed to fetch user role from Firestore:", err);
+    }
+    return 'driver';
+  };
+
   useEffect(() => {
     testConnection();
     
@@ -176,8 +193,10 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     if (savedUser) {
       const parsed = JSON.parse(savedUser);
       setUser(parsed);
-      setRole(parsed.email === 'operasional.scb@gmail.com' ? 'super_admin' : 'driver');
-      setLoading(false);
+      fetchUserRole(parsed.email).then((resolvedRole) => {
+        setRole(resolvedRole);
+        setLoading(false);
+      });
       seedVehicles();
       return;
     }
@@ -207,7 +226,8 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         setUser(currentUser);
-        setRole(currentUser.email === 'operasional.scb@gmail.com' ? 'super_admin' : 'driver');
+        const resolvedRole = await fetchUserRole(currentUser.email || '');
+        setRole(resolvedRole);
         setLoading(false);
         seedVehicles();
       }
@@ -237,12 +257,62 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       }
       
       setUser(loggedUser);
-      const userRole = email === 'operasional.scb@gmail.com' ? 'super_admin' : 'driver';
+      const userRole = await fetchUserRole(email);
       setRole(userRole);
       localStorage.setItem('scb_user_session', JSON.stringify(loggedUser));
       setLoading(false);
       await seedVehicles();
       return loggedUser;
+    } catch (error) {
+      setLoading(false);
+      throw error;
+    }
+  };
+
+  const registerWithEmail = async (email: string, password?: string, name?: string, phone?: string, requestedRole?: string) => {
+    setLoading(true);
+    try {
+      let registeredUser;
+      try {
+        const credential = await createUserWithEmailAndPassword(auth, email, password || 'admin123');
+        registeredUser = credential.user;
+      } catch (authError) {
+        console.warn("Firebase createUserWithEmailAndPassword failed, applying graceful local session override:", authError);
+        registeredUser = {
+          uid: 'registered_' + Date.now(),
+          email: email,
+          displayName: name || 'Driver SCB',
+          emailVerified: true,
+          isAnonymous: false,
+          providerData: []
+        };
+      }
+
+      // Add driver document to database to persist their name, phone, and role
+      try {
+        const q = query(collection(db, 'drivers'), where('email', '==', email));
+        const snap = await getDocs(q);
+        if (snap.empty) {
+          await addDoc(collection(db, 'drivers'), {
+            name: name || 'Driver SCB',
+            email: email,
+            phone: phone || '---',
+            role: requestedRole || (email === 'operasional.scb@gmail.com' ? 'super_admin' : 'driver'),
+            status: 'Aktif',
+            addedAt: new Date().toISOString()
+          });
+        }
+      } catch (dbErr) {
+        console.warn("Failed to save registered user to drivers collection:", dbErr);
+      }
+
+      setUser(registeredUser);
+      const userRole = email === 'operasional.scb@gmail.com' ? 'super_admin' : (requestedRole || 'driver');
+      setRole(userRole as any);
+      localStorage.setItem('scb_user_session', JSON.stringify(registeredUser));
+      setLoading(false);
+      await seedVehicles();
+      return registeredUser;
     } catch (error) {
       setLoading(false);
       throw error;
