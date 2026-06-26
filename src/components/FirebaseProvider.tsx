@@ -192,12 +192,50 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     const savedUser = localStorage.getItem('scb_user_session');
     if (savedUser) {
       const parsed = JSON.parse(savedUser);
-      setUser(parsed);
-      fetchUserRole(parsed.email).then((resolvedRole) => {
-        setRole(resolvedRole);
+      const email = parsed.email || '';
+      
+      if (email === 'operasional.scb@gmail.com') {
+        setUser(parsed);
+        setRole('super_admin');
         setLoading(false);
-      });
-      seedVehicles();
+        seedVehicles();
+      } else {
+        // Query database to ensure they are still active and fetch role
+        const checkActiveSession = async () => {
+          try {
+            const q = query(collection(db, 'drivers'), where('email', '==', email));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              const driverData = snap.docs[0].data();
+              const status = driverData.status || 'Aktif';
+              if (status !== 'Aktif') {
+                console.log("Session inactive/unapproved, logging out:", status);
+                localStorage.removeItem('scb_user_session');
+                try { await signOut(auth); } catch(e){}
+                setUser(null);
+                setRole('driver');
+                setLoading(false);
+                return;
+              }
+              setUser(parsed);
+              setRole(driverData.role || 'driver');
+            } else {
+              // No record found, clear session
+              localStorage.removeItem('scb_user_session');
+              setUser(null);
+              setRole('driver');
+            }
+          } catch (err) {
+            console.warn("Failed to verify saved user session:", err);
+            // Fallback: keep them logged in if offline/error
+            setUser(parsed);
+            setRole('driver');
+          }
+          setLoading(false);
+          seedVehicles();
+        };
+        checkActiveSession();
+      }
       return;
     }
 
@@ -225,11 +263,40 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           seedVehicles();
         }
       } else {
-        setUser(currentUser);
-        const resolvedRole = await fetchUserRole(currentUser.email || '');
-        setRole(resolvedRole);
-        setLoading(false);
-        seedVehicles();
+        const email = currentUser.email || '';
+        const isSuperAdmin = email === 'operasional.scb@gmail.com';
+        if (isSuperAdmin) {
+          setUser(currentUser);
+          setRole('super_admin');
+          setLoading(false);
+          seedVehicles();
+        } else {
+          try {
+            const q = query(collection(db, 'drivers'), where('email', '==', email));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              const driverData = snap.docs[0].data();
+              const status = driverData.status || 'Aktif';
+              if (status !== 'Aktif') {
+                console.log("Firebase user is inactive, signing out:", status);
+                try { await signOut(auth); } catch(e){}
+                localStorage.removeItem('scb_user_session');
+                return;
+              }
+              setUser(currentUser);
+              setRole(driverData.role || 'driver');
+            } else {
+              setUser(currentUser);
+              setRole('driver');
+            }
+          } catch (err) {
+            console.warn("Failed to fetch user role on state change:", err);
+            setUser(currentUser);
+            setRole('driver');
+          }
+          setLoading(false);
+          seedVehicles();
+        }
       }
     });
     return unsubscribe;
@@ -256,6 +323,44 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         };
       }
       
+      // Fetch user's status from the database to check approval
+      const isSuperAdmin = email === 'operasional.scb@gmail.com';
+      if (!isSuperAdmin) {
+        try {
+          const q = query(collection(db, 'drivers'), where('email', '==', email));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            const driverData = snap.docs[0].data();
+            const status = driverData.status || 'Aktif';
+            if (status === 'Menunggu Persetujuan') {
+              try { await signOut(auth); } catch (e) {}
+              throw new Error("Akun Anda sedang menunggu persetujuan dari Super Admin.");
+            }
+            if (status === 'Nonaktif' || status === 'Tidak Aktif') {
+              try { await signOut(auth); } catch (e) {}
+              throw new Error("Akun Anda telah dinonaktifkan oleh Super Admin.");
+            }
+          } else {
+            // No driver entry, auto-create as Menunggu Persetujuan and deny login
+            await addDoc(collection(db, 'drivers'), {
+              name: loggedUser.displayName || 'Pengguna SCB',
+              email: email,
+              phone: '---',
+              role: 'driver',
+              status: 'Menunggu Persetujuan',
+              addedAt: new Date().toISOString()
+            });
+            try { await signOut(auth); } catch (e) {}
+            throw new Error("Akun Anda telah didaftarkan dan sedang menunggu persetujuan dari Super Admin.");
+          }
+        } catch (err: any) {
+          if (err.message && (err.message.includes("persetujuan") || err.message.includes("dinonaktifkan"))) {
+            throw err;
+          }
+          console.warn("Approval status check bypassed or failed:", err);
+        }
+      }
+
       setUser(loggedUser);
       const userRole = await fetchUserRole(email);
       setRole(userRole);
@@ -272,47 +377,106 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const registerWithEmail = async (email: string, password?: string, name?: string, phone?: string, requestedRole?: string) => {
     setLoading(true);
     try {
+      const cleanEmail = (email || '').trim().toLowerCase();
+      const cleanName = (name || '').trim();
+      const cleanPhone = (phone || '').trim();
+      const cleanPassword = (password || '').trim();
+
+      if (!cleanName) {
+        throw new Error("Nama Lengkap tidak boleh kosong.");
+      }
+      if (!cleanEmail) {
+        throw new Error("Alamat Email tidak boleh kosong.");
+      }
+      if (!cleanPhone) {
+        throw new Error("Nomor Telepon tidak boleh kosong.");
+      }
+      if (!cleanPassword) {
+        throw new Error("Password tidak boleh kosong.");
+      }
+      if (cleanPassword.length < 6) {
+        throw new Error("Password harus minimal 6 karakter.");
+      }
+
+      // Check if email already registered in Firestore drivers collection
+      const q = query(collection(db, 'drivers'), where('email', '==', cleanEmail));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        throw new Error("Alamat email ini sudah terdaftar di sistem SCB.");
+      }
+
       let registeredUser;
       try {
-        const credential = await createUserWithEmailAndPassword(auth, email, password || 'admin123');
+        const credential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
         registeredUser = credential.user;
-      } catch (authError) {
-        console.warn("Firebase createUserWithEmailAndPassword failed, applying graceful local session override:", authError);
-        registeredUser = {
-          uid: 'registered_' + Date.now(),
-          email: email,
-          displayName: name || 'Driver SCB',
-          emailVerified: true,
-          isAnonymous: false,
-          providerData: []
-        };
+      } catch (authError: any) {
+        console.warn("Firebase createUserWithEmailAndPassword failed, checking error code:", authError);
+        
+        if (authError.code === 'auth/email-already-in-use') {
+          throw new Error("Alamat email ini sudah terdaftar di sistem Firebase.");
+        } else if (authError.code === 'auth/weak-password') {
+          throw new Error("Password terlalu lemah. Harus minimal 6 karakter.");
+        } else if (authError.code === 'auth/invalid-email') {
+          throw new Error("Format alamat email tidak valid.");
+        } else if (authError.code === 'auth/operation-not-allowed') {
+          console.warn("Firebase email auth not enabled, falling back to local session override");
+          registeredUser = {
+            uid: 'registered_' + Date.now(),
+            email: cleanEmail,
+            displayName: cleanName,
+            emailVerified: true,
+            isAnonymous: false,
+            providerData: []
+          };
+        } else {
+          // General network or config fallback
+          console.warn("General auth error, applying graceful local session override:", authError);
+          registeredUser = {
+            uid: 'registered_' + Date.now(),
+            email: cleanEmail,
+            displayName: cleanName,
+            emailVerified: true,
+            isAnonymous: false,
+            providerData: []
+          };
+        }
       }
+
+      const isSuperAdmin = cleanEmail === 'operasional.scb@gmail.com';
+      const initialStatus = isSuperAdmin ? 'Aktif' : 'Menunggu Persetujuan';
+      const assignedRole = isSuperAdmin ? 'super_admin' : (requestedRole || 'driver');
 
       // Add driver document to database to persist their name, phone, and role
       try {
-        const q = query(collection(db, 'drivers'), where('email', '==', email));
-        const snap = await getDocs(q);
-        if (snap.empty) {
-          await addDoc(collection(db, 'drivers'), {
-            name: name || 'Driver SCB',
-            email: email,
-            phone: phone || '---',
-            role: requestedRole || (email === 'operasional.scb@gmail.com' ? 'super_admin' : 'driver'),
-            status: 'Aktif',
-            addedAt: new Date().toISOString()
-          });
-        }
+        await addDoc(collection(db, 'drivers'), {
+          name: cleanName,
+          email: cleanEmail,
+          phone: cleanPhone,
+          role: assignedRole,
+          status: initialStatus,
+          addedAt: new Date().toISOString()
+        });
       } catch (dbErr) {
         console.warn("Failed to save registered user to drivers collection:", dbErr);
       }
 
-      setUser(registeredUser);
-      const userRole = email === 'operasional.scb@gmail.com' ? 'super_admin' : (requestedRole || 'driver');
-      setRole(userRole as any);
-      localStorage.setItem('scb_user_session', JSON.stringify(registeredUser));
-      setLoading(false);
-      await seedVehicles();
-      return registeredUser;
+      if (isSuperAdmin) {
+        setUser(registeredUser);
+        setRole('super_admin');
+        localStorage.setItem('scb_user_session', JSON.stringify(registeredUser));
+        setLoading(false);
+        await seedVehicles();
+        return registeredUser;
+      } else {
+        // For standard self-registration, log out immediately and return a pending status
+        try {
+          await signOut(auth);
+        } catch (signOutErr) {
+          console.warn("Post-registration logout failed:", signOutErr);
+        }
+        setLoading(false);
+        return { pendingApproval: true, email: cleanEmail };
+      }
     } catch (error) {
       setLoading(false);
       throw error;
@@ -380,7 +544,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, role, loginWithEmail, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, loading, role, loginWithEmail, registerWithEmail, loginWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -32,12 +32,13 @@ import {
   Phone,
   Wrench,
   Sun,
-  Moon
+  Moon,
+  Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './FirebaseProvider';
 import { db } from '../lib/firebase';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, deleteDoc, doc, setDoc, where, getDocs } from 'firebase/firestore';
 
 interface Permission {
   id: string;
@@ -116,8 +117,11 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
   const [registerRole, setRegisterRole] = useState<'driver' | 'inspector' | 'admin'>('driver');
   const [registerError, setRegisterError] = useState('');
   const [isRegisteringProcess, setIsRegisteringProcess] = useState(false);
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
 
   const [isAddingDriver, setIsAddingDriver] = useState(false);
+  const [addDriverError, setAddDriverError] = useState('');
+  const [addDriverSuccess, setAddDriverSuccess] = useState('');
 
   const tabs = [
     { id: 'dashboard', label: 'Beranda', icon: LayoutDashboard },
@@ -194,24 +198,50 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!registerEmail || !registerName) return;
-    setIsRegisteringProcess(true);
     setRegisterError('');
+
+    // Field-by-field client-side check to provide clean, explicit alerts
+    const missing = [];
+    if (!registerName.trim()) missing.push('Nama Lengkap');
+    if (!registerEmail.trim()) missing.push('Alamat Email');
+    if (!registerPhone.trim()) missing.push('Nomor Telepon');
+    if (!registerPassword.trim()) missing.push('Password');
+
+    if (missing.length > 0) {
+      setRegisterError(`Mohon lengkapi seluruh kolom pendaftaran. Kolom berikut masih kosong: ${missing.join(', ')}`);
+      return;
+    }
+
+    if (registerPassword.length < 6) {
+      setRegisterError('Password harus minimal 6 karakter demi keamanan akun Anda.');
+      return;
+    }
+
+    if (!registerEmail.includes('@') || !registerEmail.includes('.')) {
+      setRegisterError('Format alamat email tidak valid.');
+      return;
+    }
+
+    setIsRegisteringProcess(true);
     try {
-      await registerWithEmail(
+      const result = await registerWithEmail(
         registerEmail,
-        registerPassword || 'admin123',
+        registerPassword,
         registerName,
-        registerPhone || '---',
+        registerPhone,
         registerRole
       );
-      setRegisterName('');
-      setRegisterEmail('');
-      setRegisterPassword('');
-      setRegisterPhone('');
-      setRegisterRole('driver');
-      setIsRegisterMode(false);
-      setIsAccountOpen(false);
+      if (result && result.pendingApproval) {
+        setRegistrationSuccess(true);
+      } else {
+        setRegisterName('');
+        setRegisterEmail('');
+        setRegisterPassword('');
+        setRegisterPhone('');
+        setRegisterRole('driver');
+        setIsRegisterMode(false);
+        setIsAccountOpen(false);
+      }
     } catch (err: any) {
       setRegisterError(err.message || 'Pendaftaran gagal. Silakan coba lagi.');
     } finally {
@@ -233,23 +263,51 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
 
   const handleAddDriver = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newDriverName || !newDriverEmail) return;
+    setAddDriverError('');
+    setAddDriverSuccess('');
+
+    const missing = [];
+    if (!newDriverName.trim()) missing.push('Nama Lengkap');
+    if (!newDriverEmail.trim()) missing.push('Email Pengguna');
+
+    if (missing.length > 0) {
+      setAddDriverError(`Gagal menambah akun. Kolom berikut masih kosong: ${missing.join(', ')}`);
+      return;
+    }
+
+    if (!newDriverEmail.includes('@') || !newDriverEmail.includes('.')) {
+      setAddDriverError('Format email tidak valid.');
+      return;
+    }
+
     setIsAddingDriver(true);
     try {
+      // Check duplicate in Firestore
+      const q = query(collection(db, 'drivers'), where('email', '==', newDriverEmail.trim().toLowerCase()));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        setAddDriverError('Akun dengan alamat email tersebut sudah terdaftar.');
+        setIsAddingDriver(false);
+        return;
+      }
+
       await addDoc(collection(db, 'drivers'), {
-        name: newDriverName,
-        email: newDriverEmail,
-        phone: newDriverPhone || '---',
+        name: newDriverName.trim(),
+        email: newDriverEmail.trim().toLowerCase(),
+        phone: newDriverPhone.trim() || '---',
         role: newDriverRole,
         status: 'Aktif',
         addedAt: new Date().toISOString()
       });
+      
+      setAddDriverSuccess(`Akun ${newDriverName} berhasil ditambahkan dengan peran ${newDriverRole}!`);
       setNewDriverName('');
       setNewDriverEmail('');
       setNewDriverPhone('');
       setNewDriverRole('driver');
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to add driver:", err);
+      setAddDriverError(err.message || 'Gagal menyimpan akun ke database.');
     } finally {
       setIsAddingDriver(false);
     }
@@ -519,106 +577,162 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
                     </div>
 
                     {isRegisterMode ? (
-                      <div className="space-y-4">
-                        <div className="text-center py-1">
-                          <h3 className="text-lg font-black text-white uppercase tracking-tight italic">Registrasi Akun Baru</h3>
-                          <p className="text-xs text-zinc-500 mt-1">Buat akun Driver, Inspector, atau Admin Anda untuk terintegrasi dengan armada SCB</p>
+                      registrationSuccess ? (
+                        <div className="text-center py-6 px-4 space-y-5 animate-fade-in">
+                          <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/30 rounded-full flex items-center justify-center mx-auto text-amber-500">
+                            <Clock className="w-8 h-8 animate-pulse" />
+                          </div>
+                          <div className="space-y-2">
+                            <h3 className="text-lg font-black text-white uppercase italic tracking-tight">Pendaftaran Terkirim</h3>
+                            <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
+                              Pendaftaran akun Anda berhasil disimpan ke cloud database dengan peran <span className="text-amber-400 font-bold uppercase">{registerRole}</span>.
+                            </p>
+                            <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
+                              Status Akun: <span className="text-amber-500 font-black uppercase italic">"Menunggu Persetujuan"</span> dari Super Admin. Anda dapat masuk setelah disetujui.
+                            </p>
+                          </div>
+                          <div className="bg-zinc-950/50 p-4 rounded-xl border border-zinc-800 text-left space-y-1.5 max-w-xs mx-auto">
+                            <p className="text-[9px] text-zinc-500 font-black uppercase">Detail Akun Anda</p>
+                            <p className="text-xs font-bold text-zinc-300">Nama: {registerName}</p>
+                            <p className="text-xs font-mono text-zinc-400">Email: {registerEmail}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRegistrationSuccess(false);
+                              setRegisterName('');
+                              setRegisterEmail('');
+                              setRegisterPassword('');
+                              setRegisterPhone('');
+                              setRegisterRole('driver');
+                              setIsRegisterMode(false);
+                            }}
+                            className="btn-primary px-8 py-2.5 text-xs font-black uppercase tracking-wider italic rounded-xl"
+                          >
+                            KEMBALI KE MASUK
+                          </button>
                         </div>
-
-                        <form onSubmit={handleRegisterSubmit} className="space-y-4 max-w-md mx-auto">
-                          <div>
-                            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">NAMA LENGKAP</label>
-                            <div className="relative">
-                              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
-                              <input 
-                                type="text" 
-                                placeholder="Contoh: Ahmad Jayadi"
-                                value={registerName}
-                                onChange={(e) => setRegisterName(e.target.value)}
-                                className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
-                                required
-                              />
-                            </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="text-center py-1">
+                            <h3 className="text-lg font-black text-white uppercase tracking-tight italic">Registrasi Akun Baru</h3>
+                            <p className="text-xs text-zinc-500 mt-1">Buat akun Driver, Inspector, atau Admin Anda untuk terintegrasi dengan armada SCB</p>
                           </div>
 
-                          <div>
-                            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">ALAMAT EMAIL</label>
-                            <div className="relative">
-                              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
-                              <input 
-                                type="email" 
-                                placeholder="driver@scb.id"
-                                value={registerEmail}
-                                onChange={(e) => setRegisterEmail(e.target.value)}
-                                className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
-                                required
-                              />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <form onSubmit={handleRegisterSubmit} className="space-y-4 max-w-md mx-auto">
                             <div>
-                              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">NOMOR TELEPON</label>
+                              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">NAMA LENGKAP</label>
                               <div className="relative">
-                                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
+                                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
                                 <input 
-                                  type="tel" 
-                                  placeholder="0812xxxxxx"
-                                  value={registerPhone}
-                                  onChange={(e) => setRegisterPhone(e.target.value)}
-                                  className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">PASSWORD</label>
-                              <div className="relative">
-                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
-                                <input 
-                                  type="password" 
-                                  placeholder="••••••••"
-                                  value={registerPassword}
-                                  onChange={(e) => setRegisterPassword(e.target.value)}
+                                  type="text" 
+                                  placeholder="Contoh: Ahmad Jayadi"
+                                  value={registerName}
+                                  onChange={(e) => setRegisterName(e.target.value)}
                                   className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
                                   required
                                 />
                               </div>
                             </div>
-                          </div>
 
-                          <div>
-                            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">PERAN (ROLE) AKSES</label>
-                            <select 
-                              value={registerRole}
-                              onChange={(e) => setRegisterRole(e.target.value as any)}
-                              className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 px-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all appearance-none cursor-pointer"
-                            >
-                              <option value="driver">DRIVER (Pengemudi Armada)</option>
-                              <option value="inspector">INSPECTOR (Pemeriksa Teknis)</option>
-                              <option value="admin">ADMIN (Staf Operasional)</option>
-                            </select>
-                          </div>
-
-                          {registerError && (
-                            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 text-[11px] font-bold flex items-center gap-2">
-                              <AlertTriangle className="w-4 h-4 shrink-0" />
-                              <span>{registerError}</span>
+                            <div>
+                              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">ALAMAT EMAIL</label>
+                              <div className="relative">
+                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
+                                <input 
+                                  type="email" 
+                                  placeholder="driver@scb.id"
+                                  value={registerEmail}
+                                  onChange={(e) => setRegisterEmail(e.target.value)}
+                                  className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
+                                  required
+                                />
+                              </div>
                             </div>
-                          )}
 
-                          <div className="pt-2">
-                            <button 
-                              type="submit"
-                              disabled={isRegisteringProcess}
-                              className="btn-primary w-full py-3.5 flex items-center justify-center gap-2 text-xs font-black uppercase italic tracking-widest"
-                            >
-                              <Plus className="w-4 h-4" />
-                              {isRegisteringProcess ? 'MENDAFTARKAN...' : 'DAFTARKAN AKUN BARU'}
-                            </button>
-                          </div>
-                        </form>
-                      </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">NOMOR TELEPON</label>
+                                <div className="relative">
+                                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
+                                  <input 
+                                    type="tel" 
+                                    placeholder="0812xxxxxx"
+                                    value={registerPhone}
+                                    onChange={(e) => setRegisterPhone(e.target.value)}
+                                    className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">PASSWORD</label>
+                                <div className="relative">
+                                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 w-4.5 h-4.5" />
+                                  <input 
+                                    type="password" 
+                                    placeholder="••••••••"
+                                    value={registerPassword}
+                                    onChange={(e) => setRegisterPassword(e.target.value)}
+                                    className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 pl-11 pr-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all placeholder:text-zinc-700"
+                                    required
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1.5">PERAN (ROLE) AKSES</label>
+                              <select 
+                                value={registerRole}
+                                onChange={(e) => setRegisterRole(e.target.value as any)}
+                                className="w-full bg-zinc-950 border-2 border-zinc-800 text-white rounded-xl py-3 px-4 text-xs font-bold outline-none focus:border-amber-500/50 transition-all appearance-none cursor-pointer"
+                              >
+                                <option value="driver">DRIVER (Pengemudi Armada)</option>
+                                <option value="inspector">INSPECTOR (Pemeriksa Teknis)</option>
+                                <option value="admin">ADMIN (Staf Operasional)</option>
+                              </select>
+                            </div>
+
+                            {/* Pembagian Role dan Deskripsi Hak Akses */}
+                            <div className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-850 text-[10px] space-y-2 mt-2">
+                              <p className="font-black text-amber-500 uppercase tracking-widest italic">Deskripsi Hak Akses Peran:</p>
+                              <div className="grid grid-cols-1 gap-2 divide-y divide-zinc-900">
+                                <div className="pt-1.5 first:pt-0 text-left">
+                                  <p className="font-bold text-white uppercase tracking-wider">Driver (Pengemudi)</p>
+                                  <p className="text-zinc-500 leading-relaxed">Mengisi laporan inspeksi mandiri harian/mingguan untuk unit armada yang ditugaskan dan melihat riwayat laporan pribadinya.</p>
+                                </div>
+                                <div className="pt-1.5 text-left">
+                                  <p className="font-bold text-blue-400 uppercase tracking-wider">Inspector (Pemeriksa Teknis)</p>
+                                  <p className="text-zinc-500 leading-relaxed">Melakukan inspeksi mendalam untuk seluruh unit armada, mengoreksi data odometer, serta melihat semua riwayat laporan.</p>
+                                </div>
+                                <div className="pt-1.5 text-left">
+                                  <p className="font-bold text-purple-400 uppercase tracking-wider">Admin (Staf Operasional)</p>
+                                  <p className="text-zinc-500 leading-relaxed">Mengelola unit fleet (tambah, edit, hapus), melihat semua riwayat laporan, serta mengirimkan notifikasi penting ke driver.</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {registerError && (
+                              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 text-[11px] font-bold flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 shrink-0" />
+                                <span>{registerError}</span>
+                              </div>
+                            )}
+
+                            <div className="pt-2">
+                              <button 
+                                type="submit"
+                                disabled={isRegisteringProcess}
+                                className="btn-primary w-full py-3.5 flex items-center justify-center gap-2 text-xs font-black uppercase italic tracking-widest"
+                              >
+                                <Plus className="w-4 h-4" />
+                                {isRegisteringProcess ? 'MENDAFTARKAN...' : 'DAFTARKAN AKUN BARU'}
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      )
                     ) : (
                       <div className="space-y-4">
                         <div className="text-center py-1">
@@ -774,6 +888,7 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
                             >
                               <option value="all">Semua Status</option>
                               <option value="Aktif">Aktif</option>
+                              <option value="Menunggu Persetujuan">Menunggu Persetujuan</option>
                               <option value="Nonaktif">Nonaktif</option>
                             </select>
                           </div>
@@ -827,7 +942,9 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
                                      driverRole === 'inspector' ? 'Inspector' : 'Driver'}
                                   </span>
                                   <span className={`text-[8px] font-bold ${
-                                    (driver.status || 'Aktif') === 'Aktif' ? 'text-emerald-500' : 'text-zinc-500'
+                                    (driver.status || 'Aktif') === 'Aktif' ? 'text-emerald-500' : 
+                                    (driver.status || 'Aktif') === 'Menunggu Persetujuan' ? 'text-amber-500 animate-pulse font-black' : 
+                                    'text-zinc-500'
                                   }`}>
                                     ● {driver.status || 'Aktif'}
                                   </span>
@@ -899,6 +1016,7 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
                                     className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-xl py-2 px-3 text-xs font-bold outline-none focus:border-amber-500/50 transition-all cursor-pointer"
                                   >
                                     <option value="Aktif">Aktif</option>
+                                    <option value="Menunggu Persetujuan">Menunggu Persetujuan</option>
                                     <option value="Nonaktif">Nonaktif</option>
                                   </select>
                                 </div>
@@ -917,6 +1035,34 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
                                   </p>
                                 </div>
                               </div>
+
+                              {/* Quick Approval Action Box */}
+                              {selectedDriver.status === 'Menunggu Persetujuan' && (
+                                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                                  <div className="space-y-1 text-left">
+                                    <p className="text-xs font-black text-amber-500 uppercase tracking-widest italic flex items-center gap-1.5">
+                                      <Clock className="w-4 h-4 animate-pulse" /> MENUNGGU PERSETUJUAN
+                                    </p>
+                                    <p className="text-[10px] text-zinc-400 leading-relaxed">
+                                      Akun ini tidak dapat mengakses sistem sebelum Anda menyetujui pendaftarannya.
+                                    </p>
+                                  </div>
+                                  <div className="flex gap-2 w-full sm:w-auto shrink-0">
+                                    <button
+                                      onClick={() => handleUpdateDriverStatus(selectedDriver.id, 'Aktif')}
+                                      className="flex-1 sm:flex-none px-4 py-2 bg-emerald-500 hover:bg-emerald-650 text-zinc-950 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
+                                    >
+                                      SETUJUI AKUN
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteDriver(selectedDriver.id)}
+                                      className="flex-1 sm:flex-none px-4 py-2 bg-red-500/10 border border-red-500/30 hover:bg-red-500 hover:text-zinc-950 text-red-500 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
+                                    >
+                                      TOLAK
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
 
                               {/* Access Rights Matrix */}
                               <div className="space-y-2">
@@ -1038,6 +1184,20 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
                                 })}
                               </div>
                             </div>
+
+                            {addDriverError && (
+                              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 text-[11px] font-bold flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 shrink-0" />
+                                <span>{addDriverError}</span>
+                              </div>
+                            )}
+
+                            {addDriverSuccess && (
+                              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-[11px] font-bold flex items-center gap-2">
+                                <Check className="w-4 h-4 shrink-0" />
+                                <span>{addDriverSuccess}</span>
+                              </div>
+                            )}
 
                             <div className="flex justify-end pt-1">
                               <button
